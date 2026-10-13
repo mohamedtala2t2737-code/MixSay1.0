@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "424103278712",
+    "project_id": "ms-chat-b9635",
+    "storage_bucket": "ms-chat-b9635.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:424103278712:android:c830ddcd80bf367f08558d",
+        "android_client_info": {
+          "package_name": "app.dardasha.dardasha"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBvHGPkDJykek8i6p-eXPybAiEUtyGmve8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:424103278712:android:d6257eef024c6db708558d",
+        "android_client_info": {
+          "package_name": "com.ms.socialchat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBvHGPkDJykek8i6p-eXPybAiEUtyGmve8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,248 @@
+import 'package:flutter/material.dart';
+
+class AppStrings {
+  const AppStrings(this.locale);
+
+  final Locale locale;
+
+  bool get isArabic => locale.languageCode == 'ar';
+
+  static const supportedLocales = [Locale('en'), Locale('ar')];
+
+  static const delegate = AppStringsDelegate();
+
+  static AppStrings of(BuildContext context) =>
+      Localizations.of<AppStrings>(context, AppStrings) ??
+      const AppStrings(Locale('en'));
+
+  // ---------- generic ----------
+  String get continueButton => isArabic ? 'متابعة' : 'Continue';
+  String get retry => isArabic ? 'حاول تاني' : 'Try again';
+  String get cancel => isArabic ? 'إلغاء' : 'Cancel';
+  String get save => isArabic ? 'حفظ' : 'Save';
+  String get savedProfile => isArabic ? 'تم الحفظ' : 'Saved';
+  String get loadingMore => isArabic ? 'جاري التحميل…' : 'Loading…';
+  String get loadFailed => isArabic ? 'حصل خطأ في التحميل' : 'Failed to load';
+  String get actionFailed => isArabic
+      ? 'تعذّر تنفيذ العملية، جرّب تاني'
+      : 'Could not complete, try again';
+
+  // ---------- login ----------
+  String get emailAddress => isArabic ? 'البريد الإلكتروني' : 'Email address';
+  String get password => isArabic ? 'كلمة السر' : 'Password';
+  String get logInButton => isArabic ? 'تسجيل الدخول' : 'Log in';
+  String get or => isArabic ? 'أو' : 'OR';
+  String get noAccount =>
+      isArabic ? 'ليس لديك حساب؟' : "Don't have an account?";
+  String get signUpLink => isArabic ? 'أنشئ حسابًا' : 'Sign up';
+
+  // ---------- sign-up steps ----------
+  String get signUpTitle =>
+      isArabic ? 'إنشاء حساب جديد' : 'Create a new account';
+  String get signupTagline => isArabic
+      ? 'شارك أفكارك وتواصل مع أصدقائك على MixSay.'
+      : 'Share your thoughts and connect with friends on MixSay.';
+  String get signupCardSubtitle =>
+      isArabic ? 'إنه سريع وسهل.' : "It's quick and easy.";
+  String get firstName => isArabic ? 'الاسم الأول' : 'First name';
+  String get lastName => isArabic ? 'اسم العائلة' : 'Last name';
+  String get day => isArabic ? 'اليوم' : 'Day';
+  String get month => isArabic ? 'الشهر' : 'Month';
+  String get year => isArabic ? 'السنة' : 'Year';
+  String get birthDatePrivacyNote => isArabic
+      ? 'نستخدم تاريخ الميلاد لحساب عمرك فقط، ولن يظهر في ملفك العام.'
+      : 'We use your birthday to calculate your age; it will not appear on your public profile.';
+  String get alreadyHaveAccount =>
+      isArabic ? 'لديك حساب بالفعل؟' : 'Already have an account?';
+  List<String> get birthMonths => isArabic
+      ? const [
+          'يناير',
+          'فبراير',
+          'مارس',
+          'أبريل',
+          'مايو',
+          'يونيو',
+          'يوليو',
+          'أغسطس',
+          'سبتمبر',
+          'أكتوبر',
+          'نوفمبر',
+          'ديسمبر',
+        ]
+      : const [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
+  String get stepNameTitle => isArabic ? 'إيه اسمك؟' : "What's your name?";
+  String get stepNameSubtitle => isArabic
+      ? 'اكتب اسمك الحقيقي عشان أصحابك تعرفوك.'
+      : 'Enter your real name so friends can find you.';
+  String get fullName => isArabic ? 'الاسم بالكامل' : 'Full name';
+  String get stepBirthTitle =>
+      isArabic ? 'تاريخ ميلادك إيه؟' : 'When is your birthday?';
+  String get stepBirthSubtitle => isArabic
+      ? 'هنعرفه ليك بس، مش هيظهر لأي حد.'
+      : 'We use it to calculate your age only.';
+  String get birthDate => isArabic ? 'تاريخ الميلاد' : 'Birth date';
+  String get pickDate => isArabic ? 'اختار التاريخ' : 'Pick a date';
+  String get stepEmailTitle =>
+      isArabic ? 'إيه بريدك الإلكتروني؟' : "What's your email?";
+  String get stepEmailSubtitle => isArabic
+      ? 'هنستخدمه لاسترجاع حسابك لو نسيت كلمة السر.'
+      : "We'll use it to recover your account.";
+  String get email => isArabic ? 'البريد الإلكتروني' : 'Email';
+  String get stepUsernameTitle =>
+      isArabic ? 'اختار اسم مستخدم' : 'Choose a username';
+  String get stepUsernameSubtitle => isArabic
+      ? 'هتدخل بيه حسابك، وهيظهر لكل الناس.'
+      : 'You will sign in with it, and others will see it.';
+  String get username => isArabic ? 'اسم المستخدم' : 'Username';
+  String get usernameFormatHint => isArabic
+      ? 'من ٤ إلى ٢٤ حرفًا: أحرف إنجليزية صغيرة وأرقام ونقطة فقط.'
+      : '4–24 characters: lowercase English letters, numbers, and periods only.';
+  String get usernameAvailable =>
+      isArabic ? 'الاسم متاح' : 'Username is available';
+  String get usernameTaken =>
+      isArabic ? 'الاسم ده مأخود' : 'This username is taken';
+  String get usernameCheckFailed =>
+      isArabic ? 'تعذّر التحقق، جرّب تاني' : 'Could not check, try again';
+  String get usernameCheckPermissionDenied => isArabic
+      ? 'تعذّر الوصول للأسماء. انشر قواعد Firestore وسجّل رمز App Check لهذا التطبيق.'
+      : 'Username lookup was denied. Deploy Firestore rules and register this app’s App Check token.';
+  String get usernameCheckDatabaseUnavailable => isArabic
+      ? 'قاعدة بيانات Firestore غير جاهزة. فعّل قاعدة البيانات ثم أعد المحاولة.'
+      : 'Firestore is not ready. Enable the database, then try again.';
+  String usernameCheckErrorCode(String code) =>
+      isArabic ? 'رمز الخطأ: $code' : 'Error code: $code';
+  String get stepPasswordTitle =>
+      isArabic ? 'اعمل كلمة سر' : 'Create a password';
+  String get stepPasswordSubtitle =>
+      isArabic ? '٨ حروف على الأقل.' : 'Use at least 8 characters.';
+  String get passwordHint =>
+      isArabic ? '٨ حروف على الأقل' : 'At least 8 characters';
+  String get createAccount => isArabic ? 'إنشاء الحساب' : 'Create account';
+  String get confirmPassword => isArabic
+      ? 'تأكيد كلمة السر'
+      : 'Confirm password';
+  String get forgotPassword => isArabic
+      ? 'نسيت كلمة السر؟'
+      : 'Forgot your password?';
+  String get resetLinkSent => isArabic
+      ? 'ابعتنالك لينك تغيير كلمة السر على بريدك.'
+      : 'A password reset link has been sent to your email.';
+  String get ageError =>
+      isArabic ? 'لازم عمرك ١٣ سنة على الأقل.' : 'You must be at least 13.';
+
+  // ---------- validation errors ----------
+  String get errRequired =>
+      isArabic ? 'الحقل ده مطلوب' : 'This field is required';
+  String get errNameTooShort => isArabic
+      ? 'اكتب اسم فيه حرفين على الأقل'
+      : 'Name must be at least 2 characters';
+  String get errFirstName =>
+      isArabic ? 'اكتب اسمك الأول.' : 'Enter your first name.';
+  String get errLastName =>
+      isArabic ? 'اكتب اسم العائلة.' : 'Enter your last name.';
+  String get errInvalidEmail =>
+      isArabic ? 'البريد الإلكتروني مش صحيح' : 'Enter a valid email';
+  String get errInvalidUsername => isArabic
+      ? 'استخدم ٤ إلى ٢٤ حرفًا صغيرًا أو رقمًا أو نقطة فقط.'
+      : 'Use 4–24 lowercase English letters, numbers, or periods only.';
+  String get errPasswordTooShort =>
+      isArabic ? '٨ حروف على الأقل' : 'At least 8 characters';
+  String get errPasswordMismatch => isArabic
+      ? 'كلمة السر غير مطابقة'
+      : 'Passwords do not match';
+
+  // ---------- auth errors ----------
+  String get errInvalidCredentials => isArabic
+      ? 'البريد الإلكتروني أو كلمة السر غير صحيح'
+      : 'Wrong email address or password';
+  String get errEmailTaken =>
+      isArabic ? 'البريد ده مسجل قبل كده' : 'This email is already registered';
+  String get errWeakPassword =>
+      isArabic ? 'كلمة السر ضعيفة' : 'Password is too weak';
+  String get errEmailNotConfirmed =>
+      isArabic ? 'أكّد بريدك الإلكتروني الأول' : 'Confirm your email first';
+  String get errNetwork =>
+      isArabic ? 'شوف اتصالك بالإنترنت' : 'Check your internet connection';
+  String get errTooManyAttempts =>
+      isArabic ? 'محاولات كتير، استنى شوية' : 'Too many attempts, try later';
+  String get errGeneric =>
+      isArabic ? 'حصل خطأ، جرّب تاني' : 'Something went wrong, try again';
+
+  // ---------- email confirmation ----------
+  String get checkEmailTitle =>
+      isArabic ? 'أكّد بريدك الإلكتروني' : 'Confirm your email';
+  String get checkEmailBody => isArabic
+      ? 'بعتنالك رابط على بريدك. افتحه، وبعدها اضغط «تحققت من البريد».'
+      : 'We sent a link to your email. Open it, then tap “I’ve verified my email”.';
+  String get backToLogin => isArabic ? 'رجوع لتسجيل الدخول' : 'Back to login';
+  String get resendVerification =>
+      isArabic ? 'إعادة إرسال رسالة التأكيد' : 'Resend verification email';
+  String get checkVerification =>
+      isArabic ? 'تحققت من البريد' : "I've verified my email";
+  String get verificationEmailSent => isArabic
+      ? 'تم إرسال رسالة التأكيد. راجع بريدك.'
+      : 'Verification email sent. Check your inbox.';
+  String get emailNotVerifiedYet => isArabic
+      ? 'لم يتم تأكيد البريد بعد. افتح رابط الرسالة أولًا.'
+      : 'Email is not verified yet. Open the link in the email first.';
+  String verificationResendCooldown(int seconds) => isArabic
+      ? 'إعادة الإرسال بعد $seconds ثانية'
+      : 'Resend in $seconds seconds';
+  String get signInToResendVerification => isArabic
+      ? 'سجّل الدخول ببريدك وكلمة السر لإعادة إرسال رسالة التأكيد.'
+      : 'Sign in with your email and password to resend the verification email.';
+  String get verificationResendFailed => isArabic
+      ? 'تعذّر إرسال الرسالة. حاول بعد قليل.'
+      : 'Could not send the email. Please try again later.';
+  String get verificationStatusFailed => isArabic
+      ? 'تعذّر التحقق من حالة البريد.'
+      : 'Could not check email verification status.';
+
+  String get logOut => isArabic ? 'تسجيل الخروج' : 'Log out';
+  String get messages => isArabic ? 'الرسائل' : 'Messages';
+  String get message => isArabic ? 'رسالة' : 'Message';
+  String get typeMessage => isArabic ? 'اكتب رسالة…' : 'Type a message…';
+  String get send => isArabic ? 'إرسال' : 'Send';
+  String get sendImage => isArabic ? 'إرسال صورة' : 'Send image';
+  String get retrySend => isArabic ? 'إعادة الإرسال' : 'Retry';
+  String get deleteMessage => isArabic ? 'حذف الرسالة' : 'Delete';
+  String messageCharacterCount(int current, int maximum) =>
+      isArabic ? '$current/$maximum حرف' : '$current/$maximum characters';
+  String get noMessagesYet => isArabic ? 'مافيش رسائل لسه' : 'No messages yet';
+  String get startConversation => isArabic
+      ? 'ابدأ محادثة مع أي شخص من حسابه أو البحث.'
+      : 'Start a conversation from a profile or search.';
+
+  String get searchHint =>
+      isArabic ? 'ابحث باسم المستخدم…' : 'Search usernames…';
+  String get searchInitial => isArabic
+      ? 'اكتب اسم المستخدم اللي بتدور عليه.'
+      : 'Type a username to search for people.';
+  String get noResults => isArabic ? 'مفيش نتايج' : 'No results';
+}
+
+class AppStringsDelegate extends LocalizationsDelegate<AppStrings> {
+  const AppStringsDelegate();
+
+  @override
+  bool isSupported(Locale locale) => ['ar', 'en'].contains(locale.languageCode);
+
+  @override
+  Future<AppStrings> load(Locale locale) async => AppStrings(locale);
+
+  @override
+  bool shouldReload(AppStringsDelegate old) => false;
+}

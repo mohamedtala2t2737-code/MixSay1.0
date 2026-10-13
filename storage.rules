@@ -1,0 +1,68 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAtLeastThirteen(birthDate) {
+      let today = request.time.date();
+      let birthday = birthDate.date();
+      let years = today.year() - birthday.year();
+      return years > 13
+        || (
+          years == 13
+          && (
+            birthday.month() < today.month()
+            || (
+              birthday.month() == today.month()
+              && birthday.day() <= today.day()
+            )
+          )
+        );
+    }
+
+    function eligibleUser() {
+      let user = firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      );
+      return user.data.birthDate is timestamp
+        && isAtLeastThirteen(user.data.birthDate);
+    }
+
+    function verifiedUser() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && eligibleUser();
+    }
+
+    function isConversationMember(conversationId) {
+      return verifiedUser()
+        && request.auth.uid in firestore.get(
+          /databases/(default)/documents/conversations/$(conversationId)
+        ).data.members;
+    }
+
+    match /chats/{conversationId}/{senderId}/{fileName} {
+      allow read: if isConversationMember(conversationId);
+      allow create, update: if isConversationMember(conversationId)
+        && request.auth.uid == senderId
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isConversationMember(conversationId)
+        && request.auth.uid == senderId;
+    }
+
+    // Feed media: FeedRepository.uploadPostMedia writes posts/{uid}/{file}.
+    // Anyone signed in may view it (the feed is public), but a user can only
+    // replace or delete media under their own id.
+    match /posts/{userId}/{fileName} {
+      allow read: if verifiedUser();
+      allow create, update: if verifiedUser()
+        && request.auth.uid == userId
+        && request.resource.size < 50 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/.*')
+          || request.resource.contentType.matches('video/.*')
+        );
+      allow delete: if verifiedUser() && request.auth.uid == userId;
+    }
+  }
+}
