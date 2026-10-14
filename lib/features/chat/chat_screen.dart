@@ -720,10 +720,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      CircleAvatar(
-                        backgroundColor: Theme.of(context).colorScheme.primary,
+                      SizedBox(
+                        width: 48,
+                        height: 48,
                         child: IconButton(
                           onPressed: _sending ? null : _sendMessage,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .primary,
+                            shape: const CircleBorder(),
+                          ),
                           icon: _sending
                               ? const SizedBox(
                                   width: 18,
@@ -816,10 +823,10 @@ class _MessageBubble extends StatelessWidget {
                         borderRadius: BorderRadius.circular(10),
                         child: Image.file(
                           File(localImagePath!),
-                          width: 220,
+                          width: double.infinity,
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => const SizedBox(
-                            width: 220,
+                            width: double.infinity,
                             height: 160,
                             child: Icon(Icons.broken_image_outlined),
                           ),
@@ -835,7 +842,7 @@ class _MessageBubble extends StatelessWidget {
                         }
                         if (!snapshot.hasData) {
                           return const SizedBox(
-                            width: 180,
+                            width: double.infinity,
                             height: 140,
                             child: Center(child: CircularProgressIndicator()),
                           );
@@ -846,18 +853,18 @@ class _MessageBubble extends StatelessWidget {
                             borderRadius: BorderRadius.circular(10),
                             child: CachedNetworkImage(
                               imageUrl: snapshot.data!,
-                              width: 220,
+                              width: double.infinity,
                               fit: BoxFit.cover,
                               memCacheWidth: 440,
                               placeholder: (_, _) => const SizedBox(
-                                width: 220,
+                                width: double.infinity,
                                 height: 160,
                                 child: Center(
                                   child: CircularProgressIndicator(),
                                 ),
                               ),
                               errorWidget: (_, _, _) => const SizedBox(
-                                width: 220,
+                                width: double.infinity,
                                 height: 160,
                                 child: Icon(Icons.broken_image_outlined),
                               ),
