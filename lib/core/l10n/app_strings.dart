@@ -267,6 +267,11 @@ class AppStrings {
   String get noStoriesSubtitle => isArabic
       ? 'الحكايات تختفي بعد ٢٤ ساعة.'
       : 'Stories disappear after 24 hours.';
+  String get storyReply => isArabic ? 'رد…' : 'Reply…';
+  String get replySent => isArabic ? 'تم إرسال الرد' : 'Reply sent';
+  String get storyViewers => isArabic ? 'المشاهدون' : 'Viewers';
+  String get noViewers =>
+      isArabic ? 'لسه محدش شافها' : 'Nobody has seen this yet';
 
   // ---------- feed ----------
   String get feedEmptyTitle => isArabic ? 'مافيش منشورات لسه' : 'No posts yet';

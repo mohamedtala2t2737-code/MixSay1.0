@@ -60,6 +60,25 @@ class StoryGroup {
   String get displayName => stories.first.displayName;
 }
 
+/// One face in the audience list of my story.
+class StoryViewer {
+  const StoryViewer({
+    required this.userId,
+    required this.username,
+    required this.fullName,
+    required this.viewedAt,
+    this.avatarUrl,
+  });
+
+  final String userId;
+  final String username;
+  final String fullName;
+  final DateTime? viewedAt;
+  final String? avatarUrl;
+
+  String get displayName => fullName.isNotEmpty ? fullName : username;
+}
+
 class StoryRepository {
   StoryRepository({
     FirebaseAuth? auth,
@@ -119,6 +138,52 @@ class StoryRepository {
               )
               .toList(growable: false);
         });
+  }
+
+  /// Records that this account watched someone else's story, which is what the
+  /// author's viewers list reads. Your own story is skipped: the rules refuse
+  /// the write, and watching your own post is not an audience.
+  Future<void> markViewed(Story story) async {
+    final userId = _userId;
+    if (story.authorId == userId) return;
+    await _stories.doc(story.id).collection('viewers').doc(userId).set({
+      'userId': userId,
+      'viewedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Who watched one of my stories, most recent first.
+  ///
+  /// One query plus one profile read per viewer: the audience document only
+  /// carries an id, and the rules cap the query at [viewerPageSize], so the
+  /// cost has a hard ceiling even for a popular story.
+  Future<List<StoryViewer>> viewersOf(String storyId) async {
+    final page = await _stories
+        .doc(storyId)
+        .collection('viewers')
+        .orderBy('viewedAt', descending: true)
+        .limit(viewerPageSize)
+        .get();
+    final viewers = <StoryViewer>[];
+    for (final document in page.docs) {
+      final data = document.data();
+      final userId = data['userId'] as String? ?? document.id;
+      final viewedAt = data['viewedAt'];
+      final profile = await _firestore
+          .collection('publicProfiles')
+          .doc(userId)
+          .get();
+      viewers.add(
+        StoryViewer(
+          userId: userId,
+          username: profile.data()?['username'] as String? ?? '',
+          fullName: profile.data()?['fullName'] as String? ?? '',
+          avatarUrl: profile.data()?['avatarUrl'] as String?,
+          viewedAt: viewedAt is Timestamp ? viewedAt.toDate() : null,
+        ),
+      );
+    }
+    return viewers;
   }
 
   Future<Story> createStory({
