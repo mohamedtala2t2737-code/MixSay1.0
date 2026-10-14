@@ -108,6 +108,7 @@ lib/
 │   │   ├── app_theme.dart
 │   │   └── theme_providers.dart
 │   ├── utils/
+│   │   ├── picked_image.dart
 │   │   └── time_ago.dart
 │   └── widgets/
 │       ├── app_text_field.dart
@@ -144,11 +145,34 @@ lib/
     │   ├── chat_providers.dart
     │   ├── chat_repository.dart
     │   ├── chat_screen.dart
+    │   ├── conversations_view.dart
     │   ├── conversations_screen.dart
     │   └── pending_queue_service.dart
-    └── feed/
-        └── presentation/
-            └── home_feed_screen.dart
+    ├── feed/
+    │   ├── data/feed_repository.dart
+    │   └── presentation/
+    │       ├── feed_providers.dart
+    │       └── saved_posts_provider.dart
+    ├── home/
+    │   └── presentation/
+    │       ├── main_shell.dart
+    │       ├── home_tab.dart
+    │       ├── notifications_tab.dart
+    │       ├── profile_tab.dart
+    │       ├── create_post_sheet.dart
+    │       └── widgets/
+    │           ├── mixsay_bottom_bar.dart
+    │           ├── stories_bar.dart
+    │           ├── story_viewer.dart
+    │           ├── post_card.dart
+    │           └── post_comments_sheet.dart
+    ├── notifications/
+    │   ├── data/notification_repository.dart
+    │   └── presentation/notification_providers.dart
+    ├── search/presentation/search_screen.dart
+    └── stories/
+        ├── data/story_repository.dart
+        └── presentation/story_providers.dart
 ```
 
 ### أدوار الطبقات والملفات
