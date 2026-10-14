@@ -9,6 +9,8 @@ import 'package:social_chat/features/auth/presentation/screens/login_screen.dart
 import 'package:social_chat/features/auth/presentation/screens/sign_up_screen.dart';
 import 'package:social_chat/features/chat/chat_screen.dart';
 import 'package:social_chat/features/chat/conversations_screen.dart';
+import 'package:social_chat/features/home/presentation/main_shell.dart';
+import 'package:social_chat/features/search/presentation/search_screen.dart';
 
 /// Rebuilds the router whenever the Firebase auth state changes,
 /// so the redirect below runs again after login / logout.
@@ -43,12 +45,13 @@ final appRouter = GoRouter(
       return isAuthRoute ? null : '/login';
     }
     if (isAuthRoute) {
-      return user.emailVerified ? '/conversations' : '/check-email';
+      return user.emailVerified ? '/home' : '/check-email';
     }
     final isChatRoute =
+        state.matchedLocation.startsWith('/chat/') ||
         state.matchedLocation == '/conversations' ||
-        state.matchedLocation.startsWith('/chat/');
-    return isChatRoute ? null : '/conversations';
+        state.matchedLocation == '/search';
+    return isChatRoute ? null : '/home';
   },
   routes: [
     GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
@@ -57,6 +60,8 @@ final appRouter = GoRouter(
       path: '/check-email',
       builder: (context, state) => const EmailConfirmationScreen(),
     ),
+    GoRoute(path: '/home', builder: (context, state) => const MainShell()),
+    GoRoute(path: '/search', builder: (context, state) => const SearchScreen()),
     GoRoute(
       path: '/conversations',
       builder: (context, state) => const ConversationsScreen(),

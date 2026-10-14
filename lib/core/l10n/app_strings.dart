@@ -131,12 +131,10 @@ class AppStrings {
   String get passwordHint =>
       isArabic ? '٨ حروف على الأقل' : 'At least 8 characters';
   String get createAccount => isArabic ? 'إنشاء الحساب' : 'Create account';
-  String get confirmPassword => isArabic
-      ? 'تأكيد كلمة السر'
-      : 'Confirm password';
-  String get forgotPassword => isArabic
-      ? 'نسيت كلمة السر؟'
-      : 'Forgot your password?';
+  String get confirmPassword =>
+      isArabic ? 'تأكيد كلمة السر' : 'Confirm password';
+  String get forgotPassword =>
+      isArabic ? 'نسيت كلمة السر؟' : 'Forgot your password?';
   String get resetLinkSent => isArabic
       ? 'ابعتنالك لينك تغيير كلمة السر على بريدك.'
       : 'A password reset link has been sent to your email.';
@@ -160,9 +158,8 @@ class AppStrings {
       : 'Use 4–24 lowercase English letters, numbers, or periods only.';
   String get errPasswordTooShort =>
       isArabic ? '٨ حروف على الأقل' : 'At least 8 characters';
-  String get errPasswordMismatch => isArabic
-      ? 'كلمة السر غير مطابقة'
-      : 'Passwords do not match';
+  String get errPasswordMismatch =>
+      isArabic ? 'كلمة السر غير مطابقة' : 'Passwords do not match';
 
   // ---------- auth errors ----------
   String get errInvalidCredentials => isArabic
@@ -242,6 +239,71 @@ class AppStrings {
   String get english => isArabic ? 'الإنجليزية' : 'English';
   String get lightMode => isArabic ? 'فاتح' : 'Light';
   String get darkMode => isArabic ? 'غامق' : 'Dark';
+
+  // ---------- home shell: tabs ----------
+  String get home => isArabic ? 'الرئيسية' : 'Home';
+  String get notifications => isArabic ? 'الإشعارات' : 'Notifications';
+  String get profile => isArabic ? 'حسابي' : 'Profile';
+  String get createPost => isArabic ? 'منشور جديد' : 'Create a post';
+  String get search => isArabic ? 'بحث' : 'Search';
+
+  // ---------- stories ----------
+  String get yourStory => isArabic ? 'حكايتك' : 'Your story';
+  String get addStory => isArabic ? 'إضافة حكاية' : 'Add story';
+  String get removeStory => isArabic ? 'حذف الحكاية' : 'Delete story';
+  String get noStories =>
+      isArabic ? 'مافيش حكايات دلوقتي' : 'No stories right now';
+  String get noStoriesSubtitle => isArabic
+      ? 'الحكايات تختفي بعد ٢٤ ساعة.'
+      : 'Stories disappear after 24 hours.';
+
+  // ---------- feed ----------
+  String get feedEmptyTitle => isArabic ? 'مافيش منشورات لسه' : 'No posts yet';
+  String get feedEmptySubtitle => isArabic
+      ? 'كن أول من ينشر شيئًا اليوم.'
+      : 'Be the first to post something today.';
+  String get postCaptionHint => isArabic ? 'اكتب حاجه…' : 'Write a caption…';
+  String get attachPhoto => isArabic ? 'إضافة صورة' : 'Add photo';
+  String get publish => isArabic ? 'نشر' : 'Post';
+  String get publishing => isArabic ? 'جاري النشر…' : 'Posting…';
+  String get postPublished => isArabic ? 'تم النشر' : 'Posted';
+  String get like => isArabic ? 'إعجاب' : 'Like';
+  String get unlike => isArabic ? 'إلغاء الإعجاب' : 'Unlike';
+  String get comments => isArabic ? 'تعليقات' : 'Comments';
+  String likesCount(int count) => isArabic ? '$count إعجاب' : '$count likes';
+  String commentsCount(int count) =>
+      isArabic ? '$count تعليق' : '$count comments';
+  String get writeComment => isArabic ? 'اكتب تعليقًا…' : 'Add a comment…';
+  String get noComments => isArabic ? 'مافيش تعليقات لسه' : 'No comments yet';
+  String get commentAdded => isArabic ? 'تم إرسال التعليق' : 'Comment added';
+  String get share => isArabic ? 'مشاركة' : 'Share';
+  String get copyText => isArabic ? 'نسخ النص' : 'Copy text';
+  String get textCopied => isArabic ? 'تم نسخ النص' : 'Text copied';
+  String get savePost => isArabic ? 'حفظ' : 'Save';
+  String get unsavePost => isArabic ? 'إلغاء الحفظ' : 'Unsave';
+  String get postOptions => isArabic ? 'خيارات المنشور' : 'Post options';
+  String get deletePost => isArabic ? 'حذف المنشور' : 'Delete post';
+  String get postDeleted => isArabic ? 'تم حذف المنشور' : 'Post deleted';
+  String get deletePostConfirm =>
+      isArabic ? 'هل تريد حذف هذا المنشور؟' : 'Delete this post?';
+  String get deleteConfirm => isArabic ? 'هل تريد الحذف؟' : 'Delete this?';
+
+  // ---------- notifications tab ----------
+  String get noNotifications =>
+      isArabic ? 'مافيش إشعارات لسه' : 'No notifications yet';
+  String get markAllRead => isArabic ? 'تعليم الكل كمقروء' : 'Mark all read';
+  String get notifLike => isArabic ? 'أعجب بمنشورك' : 'liked your post';
+  String get notifComment =>
+      isArabic ? 'علّق على منشورك' : 'commented on your post';
+  String get notifMessage => isArabic ? 'أرسل لك رسالة' : 'sent you a message';
+  String get notifFollow => isArabic ? 'بدأ متابعتك' : 'started following you';
+  String get notifGeneric =>
+      isArabic ? 'عندك إشعار جديد' : 'updated something you follow';
+
+  // ---------- profile tab ----------
+  String get myPosts => isArabic ? 'منشوراتي' : 'My posts';
+  String get noPostsYet =>
+      isArabic ? 'لم تنشر أي شيء بعد' : 'You have not posted yet';
 }
 
 class AppStringsDelegate extends LocalizationsDelegate<AppStrings> {

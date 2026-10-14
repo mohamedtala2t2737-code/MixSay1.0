@@ -135,7 +135,7 @@ class _EmailConfirmationScreenState
           .reloadEmailVerificationStatus();
       if (!mounted) return;
       if (verified) {
-        context.go('/conversations');
+        context.go('/home');
       } else {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()

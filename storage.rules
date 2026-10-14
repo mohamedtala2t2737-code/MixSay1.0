@@ -64,5 +64,17 @@ service firebase.storage {
         );
       allow delete: if verifiedUser() && request.auth.uid == userId;
     }
+
+    // Story media: StoryRepository.createStory writes stories/{uid}/{file}.
+    // Images only, so the viewer never needs a video pipeline.
+    match /stories/{userId}/{fileName} {
+      allow read: if verifiedUser();
+      allow create: if verifiedUser()
+        && request.auth.uid == userId
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow update: if false;
+      allow delete: if verifiedUser() && request.auth.uid == userId;
+    }
   }
 }

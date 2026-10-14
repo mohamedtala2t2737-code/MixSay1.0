@@ -44,11 +44,9 @@ class AppNotification {
 }
 
 class NotificationRepository {
-  NotificationRepository({
-    FirebaseAuth? auth,
-    FirebaseFirestore? firestore,
-  }) : _auth = auth ?? FirebaseAuth.instance,
-       _firestore = firestore ?? FirebaseFirestore.instance;
+  NotificationRepository({FirebaseAuth? auth, FirebaseFirestore? firestore})
+    : _auth = auth ?? FirebaseAuth.instance,
+      _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;

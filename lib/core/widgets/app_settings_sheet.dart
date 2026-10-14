@@ -14,13 +14,16 @@ Future<void> showAppSettingsSheet(BuildContext context) =>
 
 /// Opens the sheet from an AppBar action.
 class AppSettingsIconButton extends StatelessWidget {
-  const AppSettingsIconButton({super.key});
+  const AppSettingsIconButton({super.key, this.icon});
+
+  /// Defaults to the gear icon; the home top bar passes a hamburger instead.
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     return IconButton(
       tooltip: AppStrings.of(context).settings,
-      icon: const Icon(Icons.settings_outlined),
+      icon: Icon(icon ?? Icons.settings_outlined),
       onPressed: () => showAppSettingsSheet(context),
     );
   }

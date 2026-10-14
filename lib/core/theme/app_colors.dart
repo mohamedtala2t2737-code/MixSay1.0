@@ -24,9 +24,9 @@ class AppColors {
   static const success = Color(0xFF2FB56C);
   static const error = Color(0xFFFF4D5E);
 
-  static const darkBackground = Color(0xFF000000);
-  static const darkSurface = Color(0xFF111116);
-  static const darkSurfaceHigh = Color(0xFF1C1C24);
+  static const darkBackground = Color(0xFF121212);
+  static const darkSurface = Color(0xFF1C1C24);
+  static const darkSurfaceHigh = Color(0xFF262630);
 
   static const lightBackground = Color(0xFFFFFFFF);
   static const lightSurface = Color(0xFFF4F5F9);

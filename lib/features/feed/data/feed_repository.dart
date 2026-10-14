@@ -134,13 +134,31 @@ class FeedRepository {
                   isLiked: like.exists,
                 );
               } catch (error, stackTrace) {
-                _logFailure('load the current user post reaction', error, stackTrace);
+                _logFailure(
+                  'load the current user post reaction',
+                  error,
+                  stackTrace,
+                );
                 rethrow;
               }
             }),
           );
         });
   }
+
+  Stream<List<FeedPost>> watchPostsByAuthor(String authorId) => _posts
+      .where('authorId', isEqualTo: authorId)
+      .orderBy('createdAt', descending: true)
+      .limit(postPageSize)
+      .snapshots()
+      .map(
+        (snapshot) => snapshot.docs
+            .map(
+              (document) =>
+                  FeedPost.fromFirestore(document: document, isLiked: false),
+            )
+            .toList(growable: false),
+      );
 
   Stream<List<FeedComment>> watchComments(String postId) => _posts
       .doc(postId)
@@ -149,8 +167,9 @@ class FeedRepository {
       .limit(commentPageSize)
       .snapshots()
       .map(
-        (snapshot) =>
-            snapshot.docs.map(FeedComment.fromFirestore).toList(growable: false),
+        (snapshot) => snapshot.docs
+            .map(FeedComment.fromFirestore)
+            .toList(growable: false),
       );
 
   Future<void> toggleLike({
@@ -189,7 +208,11 @@ class FeedRepository {
     final userId = _userId;
     final trimmed = content.trim();
     if (trimmed.isEmpty || trimmed.length > 1000) {
-      throw ArgumentError.value(content, 'content', 'Comment must be 1-1000 characters');
+      throw ArgumentError.value(
+        content,
+        'content',
+        'Comment must be 1-1000 characters',
+      );
     }
     final postReference = _posts.doc(postId);
     final commentReference = postReference.collection('comments').doc();
@@ -208,6 +231,20 @@ class FeedRepository {
     });
   }
 
+  /// Author-only (see the `posts/{postId}` delete rule). Media is removed after
+  /// the document so a failed storage delete leaves an orphan file, not a
+  /// post whose image is gone.
+  Future<void> deletePost(FeedPost post) async {
+    await _posts.doc(post.id).delete();
+    final url = post.mediaUrl;
+    if (url == null || url.isEmpty) return;
+    try {
+      await _storage.refFromURL(url).delete();
+    } catch (error, stackTrace) {
+      _logFailure('remove deleted post media', error, stackTrace);
+    }
+  }
+
   Future<void> createPost({
     required String caption,
     String? mediaUrl,
@@ -224,7 +261,10 @@ class FeedRepository {
     if (!const {'none', 'image', 'video'}.contains(mediaType)) {
       throw ArgumentError.value(mediaType, 'mediaType');
     }
-    final profile = await _firestore.collection('publicProfiles').doc(userId).get();
+    final profile = await _firestore
+        .collection('publicProfiles')
+        .doc(userId)
+        .get();
     final data = profile.data();
     if (!profile.exists || data == null) {
       throw StateError('Complete your profile before creating a post');
@@ -242,6 +282,10 @@ class FeedRepository {
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
+
+  /// Id for a post that does not exist yet, so its media can be uploaded under
+  /// a matching path before the document is written.
+  String newPostId() => _posts.doc().id;
 
   Future<String> uploadPostMedia({
     required String postId,

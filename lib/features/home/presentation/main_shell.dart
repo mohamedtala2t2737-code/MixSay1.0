@@ -1,0 +1,110 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/theme/app_colors.dart';
+import 'package:social_chat/core/widgets/app_settings_sheet.dart';
+import 'package:social_chat/features/chat/conversations_view.dart';
+import 'package:social_chat/features/home/presentation/create_post_sheet.dart';
+import 'package:social_chat/features/home/presentation/home_tab.dart';
+import 'package:social_chat/features/home/presentation/notifications_tab.dart';
+import 'package:social_chat/features/home/presentation/profile_tab.dart';
+import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
+import 'package:social_chat/features/notifications/presentation/notification_providers.dart';
+
+/// The four-tab shell: Home, Messages, Notifications, Profile, with the create
+/// post button floating over the curved bottom bar. Tab order mirrors in RTL
+/// because every row inside reads the ambient [Directionality].
+class MainShell extends ConsumerStatefulWidget {
+  const MainShell({super.key});
+
+  @override
+  ConsumerState<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends ConsumerState<MainShell> {
+  int _tab = 0;
+
+  PreferredSizeWidget _buildAppBar(AppStrings s, BuildContext context) {
+    final settings = AppSettingsIconButton(
+      icon: _tab == 0 ? Icons.menu_rounded : null,
+    );
+    return switch (_tab) {
+      0 => AppBar(
+        centerTitle: true,
+        title: const _MixSayWordmark(),
+        leading: IconButton(
+          tooltip: s.search,
+          icon: const Icon(Icons.search),
+          onPressed: () => context.push('/search'),
+        ),
+        actions: [settings],
+      ),
+      1 => AppBar(
+        title: Text(s.messages),
+        actions: [
+          IconButton(
+            tooltip: s.message,
+            icon: const Icon(Icons.edit_square),
+            onPressed: () => startNewChat(context, ref),
+          ),
+          settings,
+        ],
+      ),
+      2 => AppBar(title: Text(s.notifications), actions: [settings]),
+      _ => AppBar(title: Text(s.profile), actions: [settings]),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
+    final unread = ref.watch(unreadNotificationsCountProvider);
+
+    return Scaffold(
+      extendBody: false,
+      appBar: _buildAppBar(s, context),
+      body: IndexedStack(
+        index: _tab,
+        children: const [
+          HomeTab(),
+          ConversationsListView(),
+          NotificationsTab(),
+          ProfileTab(),
+        ],
+      ),
+      bottomNavigationBar: MixSayBottomBar(
+        currentIndex: _tab,
+        unreadCount: unread,
+        onSelect: (index) => setState(() => _tab = index),
+        onCreate: () => showCreatePostSheet(context),
+      ),
+    );
+  }
+}
+
+/// Calligraphy logo for the home bar. Latin letters, so it never mirrors.
+class _MixSayWordmark extends StatelessWidget {
+  const _MixSayWordmark();
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: ShaderMask(
+        shaderCallback: (bounds) =>
+            AppColors.brandGradient.createShader(bounds),
+        child: const Text(
+          'MixSay',
+          style: TextStyle(
+            fontFamily: 'Pacifico',
+            fontSize: 27,
+            height: 1.2,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+}

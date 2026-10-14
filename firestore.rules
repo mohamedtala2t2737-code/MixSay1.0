@@ -480,6 +480,38 @@ service cloud.firestore {
       }
     }
 
+    // --------------------------------------------------------------- stories
+    // A story expires 24h after createdAt. Clients may only ever read it
+    // forward in time because createdAt is pinned to request.time, so a fake
+    // device clock cannot revive an old story or push one past the window.
+    match /stories/{storyId} {
+      allow get: if verifiedUser();
+      // StoryRepository queries with limit(60); this blocks bulk scraping.
+      allow list: if verifiedUser() && request.query.limit <= 60;
+
+      allow create: if verifiedUser()
+        && request.resource.data.authorId == request.auth.uid
+        && profileCopyMatchesAuthor(
+          request.auth.uid,
+          request.resource.data
+        )
+        && request.resource.data.keys().hasOnly([
+          'authorId',
+          'username',
+          'fullName',
+          'avatarUrl',
+          'mediaUrl',
+          'createdAt'
+        ])
+        && request.resource.data.mediaUrl is string
+        && request.resource.data.mediaUrl.size() > 0
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if false;
+      allow delete: if verifiedUser()
+        && resource.data.authorId == request.auth.uid;
+    }
+
     // --------------------------------------------------------- notifications
     // Notifications are written by Cloud Functions, which run with Admin
     // privileges and bypass these rules. A client may only read its own inbox

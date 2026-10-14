@@ -15,6 +15,15 @@ final feedPostsProvider = StreamProvider.autoDispose<List<FeedPost>>((ref) {
   return ref.watch(feedRepositoryProvider).watchPosts();
 });
 
+final authorPostsProvider = StreamProvider.autoDispose
+    .family<List<FeedPost>, String>((ref, authorId) {
+      final userId = ref.watch(currentUserIdProvider);
+      if (userId == null) {
+        return Stream.error(StateError('Sign in to view the MixSay feed'));
+      }
+      return ref.watch(feedRepositoryProvider).watchPostsByAuthor(authorId);
+    });
+
 final feedCommentsProvider = StreamProvider.autoDispose
     .family<List<FeedComment>, String>((ref, postId) {
       final userId = ref.watch(currentUserIdProvider);
