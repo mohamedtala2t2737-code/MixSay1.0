@@ -46,6 +46,27 @@ FeedPost _withMedia(String mediaType, String url) => FeedPost(
   mediaType: mediaType,
 );
 
+FeedPost _withCaption(String caption) => FeedPost(
+  id: 'post-long',
+  authorId: 'author-1',
+  username: 'layla.hassan',
+  fullName: 'Layla Hassan',
+  caption: caption,
+  likesCount: 1,
+  commentsCount: 0,
+  createdAt: null,
+  artworkVariant: 0,
+  isLiked: false,
+  mediaType: 'none',
+);
+
+/// Long enough that three lines cannot hold it at any of the tested widths.
+const _longCaption =
+    'Slow moments in Cairo, written down while the tram was still '
+    'crossing the bridge: the same six streets, the same bread shop on the '
+    'corner, and the same driver who always waits one second longer than he '
+    'needs to before he rings the bell.';
+
 /// Stands in for the native player so the card's video branch can be tested
 /// without a device: it reports a 30 second 640x360 clip and remembers whether
 /// the widget asked it to play.
@@ -276,6 +297,68 @@ void main() {
     final actions = tester.getTopLeft(find.byTooltip('Like')).dy;
     expect(text, lessThan(media));
     expect(media, lessThan(actions));
+  });
+
+  testWidgets('a long caption folds to three lines and opens with see more', (
+    tester,
+  ) async {
+    final caption = List.generate(
+      20,
+      (index) => 'line ${index + 1} of the long story behind this post',
+    ).join(' ');
+
+    await tester.pumpWidget(
+      _harness(const Locale('en'), post: _withCaption(caption)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Text>(find.text(caption)).maxLines, 3);
+    expect(find.text('See more'), findsOneWidget);
+    expect(find.text('See less'), findsNothing);
+
+    await tester.tap(find.text('See more'));
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Text>(find.text(caption)).maxLines, isNull);
+    expect(find.text('See less'), findsOneWidget);
+
+    await tester.tap(find.text('See less'));
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Text>(find.text(caption)).maxLines, 3);
+  });
+
+  testWidgets('a short caption gets no fold label', (tester) async {
+    await tester.pumpWidget(_harness(const Locale('en')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('See more'), findsNothing);
+    expect(find.text('See less'), findsNothing);
+  });
+
+  testWidgets('a caption that only fits at a small font folds in Arabic', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.platformDispatcher.textScaleFactorTestValue = 3;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(
+      _harness(const Locale('ar'), post: _withCaption(_longCaption)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('اقرأ المزيد'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('اقرأ المزيد'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('عرض أقل'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('the three-dots menu reports any post and deletes only mine', (

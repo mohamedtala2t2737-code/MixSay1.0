@@ -303,6 +303,8 @@ class AppStrings {
   String commentsCount(int count) =>
       isArabic ? '${number(count)} تعليق' : '$count comments';
   String get writeComment => isArabic ? 'اكتب تعليقًا…' : 'Add a comment…';
+  String get seeMore => isArabic ? 'اقرأ المزيد' : 'See more';
+  String get seeLess => isArabic ? 'عرض أقل' : 'See less';
   String get noComments => isArabic ? 'مافيش تعليقات لسه' : 'No comments yet';
   String get commentAdded => isArabic ? 'تم إرسال التعليق' : 'Comment added';
   String get share => isArabic ? 'مشاركة' : 'Share';

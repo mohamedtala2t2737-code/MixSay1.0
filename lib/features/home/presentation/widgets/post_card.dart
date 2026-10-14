@@ -30,7 +30,6 @@ class PostCard extends ConsumerStatefulWidget {
 }
 
 class _PostCardState extends ConsumerState<PostCard> {
-  bool _captionExpanded = false;
   bool _liking = false;
 
   Future<void> _toggleLike() async {
@@ -242,14 +241,7 @@ class _PostCardState extends ConsumerState<PostCard> {
         if (post.caption.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
-            child: GestureDetector(
-              onTap: () => setState(() => _captionExpanded = !_captionExpanded),
-              child: Text(
-                post.caption,
-                maxLines: _captionExpanded ? null : 3,
-                overflow: _captionExpanded ? null : TextOverflow.ellipsis,
-              ),
-            ),
+            child: _Caption(text: post.caption),
           ),
         _Media(post: post),
         Padding(
@@ -341,6 +333,81 @@ class _Media extends StatelessWidget {
           child: const Center(child: Icon(Icons.broken_image_outlined)),
         ),
       ),
+    );
+  }
+}
+
+/// Caption text that folds to three lines, with the label that says so.
+///
+/// Whether a caption needs folding is measured rather than guessed, so the
+/// label only appears when a line really is hidden at this width and this text
+/// scale.
+class _Caption extends StatefulWidget {
+  const _Caption({required this.text});
+
+  final String text;
+
+  @override
+  State<_Caption> createState() => _CaptionState();
+}
+
+class _CaptionState extends State<_Caption> {
+  static const _foldedLines = 3;
+  bool _expanded = false;
+
+  bool _needsFolding(BuildContext context, double width) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: widget.text,
+        style: DefaultTextStyle.of(context).style,
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: _foldedLines,
+    )..layout(maxWidth: width);
+    final hidden = painter.didExceedMaxLines;
+    painter.dispose();
+    return hidden;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
+    final theme = Theme.of(context);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final folded =
+            !_expanded && _needsFolding(context, constraints.maxWidth);
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: folded || _expanded
+              ? () => setState(() => _expanded = !_expanded)
+              : null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.text,
+                maxLines: folded ? _foldedLines : null,
+                overflow: folded ? TextOverflow.ellipsis : null,
+              ),
+              if (folded || _expanded)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    _expanded ? s.seeLess : s.seeMore,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
