@@ -12,8 +12,9 @@ import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
 import 'package:social_chat/features/feed/presentation/saved_posts_provider.dart';
 import 'package:social_chat/features/home/presentation/widgets/post_comments_sheet.dart';
+import 'package:social_chat/features/home/presentation/widgets/post_video.dart';
 
-/// Instagram-style post: header, media, action row, then counters and caption.
+/// Instagram-style post: header, caption, media, action row, then counters.
 class PostCard extends ConsumerStatefulWidget {
   const PostCard({super.key, required this.post});
 
@@ -210,6 +211,18 @@ class _PostCardState extends ConsumerState<PostCard> {
             ],
           ),
         ),
+        if (post.caption.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
+            child: GestureDetector(
+              onTap: () => setState(() => _captionExpanded = !_captionExpanded),
+              child: Text(
+                post.caption,
+                maxLines: _captionExpanded ? null : 3,
+                overflow: _captionExpanded ? null : TextOverflow.ellipsis,
+              ),
+            ),
+          ),
         _Media(post: post),
         Padding(
           padding: const EdgeInsets.fromLTRB(6, 2, 6, 0),
@@ -263,16 +276,6 @@ class _PostCardState extends ConsumerState<PostCard> {
                   s.likesCount(post.likesCount),
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-              if (post.caption.isNotEmpty)
-                GestureDetector(
-                  onTap: () =>
-                      setState(() => _captionExpanded = !_captionExpanded),
-                  child: Text(
-                    post.caption,
-                    maxLines: _captionExpanded ? null : 3,
-                    overflow: _captionExpanded ? null : TextOverflow.ellipsis,
-                  ),
-                ),
               if (post.commentsCount > 0)
                 TextButton(
                   onPressed: () => showPostCommentsSheet(context, post),
@@ -297,19 +300,7 @@ class _Media extends StatelessWidget {
     final theme = Theme.of(context);
     final url = post.mediaUrl;
     if (url == null || url.isEmpty) return const SizedBox(height: 4);
-    if (post.mediaType != 'image') {
-      // Video posts exist in the schema but the app has no player dependency.
-      return SizedBox(
-        height: 220,
-        child: Center(
-          child: Icon(
-            Icons.movie_outlined,
-            size: 42,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      );
-    }
+    if (post.mediaType == 'video') return PostVideo(url: url);
     return AspectRatio(
       aspectRatio: 1,
       child: CachedNetworkImage(
