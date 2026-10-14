@@ -13,9 +13,10 @@ import 'package:social_chat/features/home/presentation/profile_tab.dart';
 import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
 import 'package:social_chat/features/notifications/presentation/notification_providers.dart';
 
-/// The four-tab shell: Home, Messages, Notifications, Profile, with the create
-/// post button floating over the curved bottom bar. Tab order mirrors in RTL
-/// because every row inside reads the ambient [Directionality].
+/// The four-tab shell: Home, Messages, Notifications, Profile, with a flat
+/// bottom bar whose centre item opens the create-post sheet. Tab order mirrors
+/// in RTL because every row inside reads the ambient [Directionality]; only
+/// the home app bar is pinned, so menu and search keep their physical sides.
 class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
 

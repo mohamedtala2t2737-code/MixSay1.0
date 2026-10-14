@@ -132,7 +132,7 @@ void main() {
     );
   }
 
-  testWidgets('the curved bar keeps the create button centred in LTR', (
+  testWidgets('the flat bar keeps the create item centred and level in LTR', (
     tester,
   ) async {
     _usePhoneViewport(tester);
@@ -156,6 +156,75 @@ void main() {
       _centerX(tester, find.byIcon(Icons.notifications_none_rounded)),
       lessThan(_centerX(tester, find.byIcon(Icons.account_circle_outlined))),
     );
+
+    // Flat bar: the centre item sits on the same line as its neighbours, so
+    // there is no raised button and no arch left over from the old design.
+    final createY = tester.getCenter(find.byIcon(Icons.add_rounded)).dy;
+    for (final icon in [
+      Icons.home_filled,
+      Icons.mail_outline_rounded,
+      Icons.notifications_none_rounded,
+      Icons.account_circle_outlined,
+    ]) {
+      expect(tester.getCenter(find.byIcon(icon)).dy, closeTo(createY, 1));
+    }
+  });
+
+  testWidgets(
+    'the centre item opens the composer and never takes the tab highlight',
+    (tester) async {
+      _usePhoneViewport(tester);
+      await tester.pumpWidget(_harness(const Locale('en')));
+      await tester.pumpAndSettle();
+
+      Color iconColor(IconData icon) =>
+          tester.widget<Icon>(find.byIcon(icon)).color!;
+      final scheme = Theme.of(tester.element(find.byIcon(Icons.home_filled)))
+          .colorScheme;
+
+      // Home starts selected, so the create item must not be the primary colour
+      // even though it now lives between the tabs.
+      expect(iconColor(Icons.home_filled), scheme.primary);
+      expect(iconColor(Icons.add_rounded), scheme.onSurfaceVariant);
+
+      await tester.tap(find.byIcon(Icons.add_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Write a caption…'), findsOneWidget);
+      expect(find.text('Post'), findsOneWidget);
+      // The shell is still on Home behind the sheet.
+      expect(find.text('MixSay'), findsOneWidget);
+      expect(iconColor(Icons.add_rounded), scheme.onSurfaceVariant);
+    },
+  );
+
+  testWidgets('the tab highlight follows the four indices after the reorder', (
+    tester,
+  ) async {
+    _usePhoneViewport(tester);
+    await tester.pumpWidget(_harness(const Locale('en')));
+    await tester.pumpAndSettle();
+
+    Color iconColor(IconData icon) =>
+        tester.widget<Icon>(find.byIcon(icon)).color!;
+    final scheme = Theme.of(tester.element(find.byIcon(Icons.home_filled)))
+        .colorScheme;
+
+    await tester.tap(find.byIcon(Icons.account_circle_outlined));
+    await tester.pumpAndSettle();
+    expect(iconColor(Icons.account_circle_outlined), scheme.primary);
+    expect(iconColor(Icons.home_filled), scheme.onSurfaceVariant);
+    expect(find.text('My posts'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.mail_outline_rounded));
+    await tester.pumpAndSettle();
+    expect(iconColor(Icons.mail_outline_rounded), scheme.primary);
+    expect(iconColor(Icons.account_circle_outlined), scheme.onSurfaceVariant);
+
+    await tester.tap(find.byIcon(Icons.home_filled));
+    await tester.pumpAndSettle();
+    expect(iconColor(Icons.home_filled), scheme.primary);
+    expect(find.text('MixSay'), findsOneWidget);
   });
 
   testWidgets('the same tab order mirrors to the right in Arabic', (
@@ -172,6 +241,10 @@ void main() {
     expect(find.text('الرئيسية'), findsOneWidget);
     expect(find.text('حكايتك'), findsOneWidget);
     expect(_centerX(tester, find.byTooltip('منشور جديد')), closeTo(195, 1));
+    expect(
+      tester.getCenter(find.byIcon(Icons.add_rounded)).dy,
+      closeTo(tester.getCenter(find.byIcon(Icons.home_filled)).dy, 1),
+    );
     expect(
       _centerX(tester, find.byIcon(Icons.home_filled)),
       greaterThan(_centerX(tester, find.byIcon(Icons.mail_outline_rounded))),
