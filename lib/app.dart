@@ -24,6 +24,12 @@ class _SocialChatAppState extends ConsumerState<SocialChatApp> {
   void initState() {
     super.initState();
     unawaited(
+      ref.read(localeControllerProvider.notifier).restore(),
+    );
+    unawaited(
+      ref.read(themeModeProvider.notifier).restore(),
+    );
+    unawaited(
       ChatNotificationService.instance.initialize(
         onOpenConversation: (conversationId) async =>
             appRouter.push('/chat/$conversationId'),

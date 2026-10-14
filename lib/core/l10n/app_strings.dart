@@ -232,6 +232,16 @@ class AppStrings {
       ? 'اكتب اسم المستخدم اللي بتدور عليه.'
       : 'Type a username to search for people.';
   String get noResults => isArabic ? 'مفيش نتايج' : 'No results';
+
+  // ---------- settings: language & appearance ----------
+  String get settings => isArabic ? 'الإعدادات' : 'Settings';
+  String get language => isArabic ? 'اللغة' : 'Language';
+  String get appearance => isArabic ? 'المظهر' : 'Appearance';
+  String get followSystem => isArabic ? 'زي النظام' : 'Follow system';
+  String get arabic => isArabic ? 'العربية' : 'Arabic';
+  String get english => isArabic ? 'الإنجليزية' : 'English';
+  String get lightMode => isArabic ? 'فاتح' : 'Light';
+  String get darkMode => isArabic ? 'غامق' : 'Dark';
 }
 
 class AppStringsDelegate extends LocalizationsDelegate<AppStrings> {

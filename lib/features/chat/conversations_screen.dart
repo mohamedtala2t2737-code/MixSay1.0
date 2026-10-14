@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/widgets/app_settings_sheet.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
@@ -28,6 +29,7 @@ class ConversationsScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text(s.messages),
         actions: [
+          const AppSettingsIconButton(),
           IconButton(
             tooltip: s.logOut,
             icon: const Icon(Icons.logout),
