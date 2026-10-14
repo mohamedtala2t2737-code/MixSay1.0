@@ -11,6 +11,7 @@ import 'package:video_player_platform_interface/video_player_platform_interface.
 
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
+import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/saved_posts_provider.dart';
 import 'package:social_chat/features/home/presentation/widgets/post_card.dart';
@@ -116,19 +117,23 @@ class _FakeVideoPlatform extends VideoPlayerPlatform {
 
 late _FakeVideoPlatform _video;
 
-Widget _harness(Locale locale, {FeedPost post = _post}) => ProviderScope(
-  child: MaterialApp(
-    locale: locale,
-    localizationsDelegates: const [
-      AppStrings.delegate,
-      ...GlobalMaterialLocalizations.delegates,
-    ],
-    supportedLocales: AppStrings.supportedLocales,
-    home: Scaffold(
-      body: SingleChildScrollView(child: PostCard(post: post)),
-    ),
-  ),
-);
+Widget _harness(Locale locale, {FeedPost post = _post, String? asUser}) =>
+    ProviderScope(
+      overrides: [
+        if (asUser != null) currentUserIdProvider.overrideWithValue(asUser),
+      ],
+      child: MaterialApp(
+        locale: locale,
+        localizationsDelegates: const [
+          AppStrings.delegate,
+          ...GlobalMaterialLocalizations.delegates,
+        ],
+        supportedLocales: AppStrings.supportedLocales,
+        home: Scaffold(
+          body: SingleChildScrollView(child: PostCard(post: post)),
+        ),
+      ),
+    );
 
 void main() {
   setUp(() {
@@ -271,6 +276,44 @@ void main() {
     final actions = tester.getTopLeft(find.byTooltip('Like')).dy;
     expect(text, lessThan(media));
     expect(media, lessThan(actions));
+  });
+
+  testWidgets('the three-dots menu reports any post and deletes only mine', (
+    tester,
+  ) async {
+    Future<void> openMenu({required String viewerId}) async {
+      await tester.pumpWidget(_harness(const Locale('en'), asUser: viewerId));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Post options'));
+      await tester.pumpAndSettle();
+    }
+
+    await openMenu(viewerId: 'someone-else');
+
+    expect(find.text('Report post'), findsOneWidget);
+    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Copy text'), findsOneWidget);
+    // A link is only offered once AppLinks carries a real domain.
+    expect(find.text('Copy link'), findsNothing);
+    expect(find.text('Delete post'), findsNothing);
+
+    await tester.tap(find.text('Report post'));
+    await tester.pumpAndSettle();
+
+    // The report sheet replaces the menu instead of stacking behind it.
+    expect(find.text('Choose the reason that fits'), findsOneWidget);
+    expect(find.text('Send report'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a post of mine keeps the delete row', (tester) async {
+    await tester.pumpWidget(_harness(const Locale('en'), asUser: 'author-1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Post options'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete post'), findsOneWidget);
+    expect(find.text('Report post'), findsOneWidget);
   });
 
   test('saved posts restore from preferences', () async {

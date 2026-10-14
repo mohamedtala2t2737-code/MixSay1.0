@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:social_chat/core/config/app_links.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/utils/time_ago.dart';
+import 'package:social_chat/core/widgets/app_list_tile.dart';
 import 'package:social_chat/core/widgets/confirmation_dialog.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
@@ -14,6 +16,8 @@ import 'package:social_chat/features/feed/presentation/feed_providers.dart';
 import 'package:social_chat/features/feed/presentation/saved_posts_provider.dart';
 import 'package:social_chat/features/home/presentation/widgets/post_comments_sheet.dart';
 import 'package:social_chat/features/home/presentation/widgets/post_video.dart';
+import 'package:social_chat/features/reports/data/report_repository.dart';
+import 'package:social_chat/features/reports/presentation/report_sheet.dart';
 
 /// Instagram-style post: header, caption, media, action row, then counters.
 class PostCard extends ConsumerStatefulWidget {
@@ -87,10 +91,22 @@ class _PostCardState extends ConsumerState<PostCard> {
       ..showSnackBar(SnackBar(content: Text(s.textCopied)));
   }
 
+  Future<void> _copyLink() async {
+    final s = AppStrings.of(context);
+    final url = AppLinks.postUrl(widget.post.id);
+    if (url == null) return;
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(s.linkCopied)));
+  }
+
   void _openOptions() {
     final s = AppStrings.of(context);
     final isMine = widget.post.authorId == ref.read(currentUserIdProvider);
     final saved = ref.read(savedPostsProvider).contains(widget.post.id);
+    final link = AppLinks.postUrl(widget.post.id);
 
     showModalBottomSheet<void>(
       context: context,
@@ -105,32 +121,54 @@ class _PostCardState extends ConsumerState<PostCard> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
+              AppListTile(
+                leading: Icon(
+                  Icons.flag_outlined,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: s.reportPost,
+                onTap: () => closeAndRun(
+                  () => showReportSheet(
+                    context,
+                    target: ReportTarget.post,
+                    targetId: widget.post.id,
+                  ),
+                ),
+              ),
+              // Hidden until a real domain is configured in AppLinks, so the
+              // copied text is never a broken url.
+              if (link != null)
+                AppListTile(
+                  leading: const Icon(Icons.link_rounded),
+                  title: s.copyLink,
+                  onTap: () => closeAndRun(_copyLink),
+                ),
+              if (widget.post.caption.isNotEmpty)
+                AppListTile(
+                  leading: const Icon(Icons.copy_rounded),
+                  title: s.copyText,
+                  onTap: () => closeAndRun(_copyText),
+                ),
+              AppListTile(
                 leading: Icon(
                   saved
                       ? Icons.bookmark_remove_rounded
                       : Icons.bookmark_add_rounded,
                 ),
-                title: Text(saved ? s.unsavePost : s.savePost),
+                title: saved ? s.unsavePost : s.savePost,
                 onTap: () => closeAndRun(
                   () => ref
                       .read(savedPostsProvider.notifier)
                       .toggle(widget.post.id),
                 ),
               ),
-              if (widget.post.caption.isNotEmpty)
-                ListTile(
-                  leading: const Icon(Icons.copy_rounded),
-                  title: Text(s.copyText),
-                  onTap: () => closeAndRun(_copyText),
-                ),
               if (isMine)
-                ListTile(
+                AppListTile(
                   leading: Icon(
                     Icons.delete_rounded,
                     color: Theme.of(context).colorScheme.error,
                   ),
-                  title: Text(s.deletePost),
+                  title: s.deletePost,
                   onTap: () => closeAndRun(_deletePost),
                 ),
             ],

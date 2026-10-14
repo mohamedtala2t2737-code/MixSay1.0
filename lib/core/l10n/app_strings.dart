@@ -317,6 +317,32 @@ class AppStrings {
       isArabic ? 'هل تريد حذف هذا المنشور؟' : 'Delete this post?';
   String get deleteConfirm => isArabic ? 'هل تريد الحذف؟' : 'Delete this?';
 
+  // ---------- reports ----------
+  String get report => isArabic ? 'إبلاغ' : 'Report';
+  String get reportPost => isArabic ? 'الإبلاغ عن المنشور' : 'Report post';
+  String get reportStory => isArabic ? 'الإبلاغ عن القصة' : 'Report story';
+  String get reportReason => isArabic
+      ? 'اختار السبب اللي يوصّف المحتوى'
+      : 'Choose the reason that fits';
+  String get reportNoteHint =>
+      isArabic ? 'ملاحظة إضافية (اختياري)' : 'Extra note (optional)';
+  String get sendReport => isArabic ? 'إرسال البلاغ' : 'Send report';
+  String get reportSent => isArabic ? 'تم إرسال البلاغ' : 'Report sent';
+
+  /// Keyed on the same values as the `reason in [...]` rule, so a label cannot
+  /// drift away from what the rules accept.
+  String reasonLabel(String reason) => switch (reason) {
+    'spam' => isArabic ? 'رسائل مزعجة' : 'Spam',
+    'harassment' => isArabic ? 'تحرش أو تنمر' : 'Harassment or bullying',
+    'nudity' => isArabic ? 'محتوى غير لائق' : 'Nudity or sexual content',
+    'violence' => isArabic ? 'عنف' : 'Violence',
+    'misinformation' => isArabic ? 'معلومات مضللة' : 'False information',
+    _ => isArabic ? 'سبب تاني' : 'Something else',
+  };
+
+  String get copyLink => isArabic ? 'نسخ الرابط' : 'Copy link';
+  String get linkCopied => isArabic ? 'تم نسخ الرابط' : 'Link copied';
+
   // ---------- notifications tab ----------
   String get noNotifications =>
       isArabic ? 'مافيش إشعارات لسه' : 'No notifications yet';
