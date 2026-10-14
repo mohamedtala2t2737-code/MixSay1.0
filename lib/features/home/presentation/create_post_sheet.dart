@@ -32,7 +32,9 @@ class _CreatePostSheet extends ConsumerStatefulWidget {
 
 class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
   final _controller = TextEditingController();
-  PickedPostMedia? _media;
+
+  /// The attached photos (a carousel) or the single attached clip.
+  List<PickedPostMedia> _media = const [];
   bool _busy = false;
   double _progress = 0;
 
@@ -53,8 +55,11 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     final s = AppStrings.of(context);
     setState(() => _busy = true);
     try {
-      final picked = video ? await pickPostVideo() : await pickPostImage();
-      if (picked != null && mounted) setState(() => _media = picked);
+      // A photo pick replaces the whole set: mixing a clip into a carousel is
+      // what the `mediaType == 'image'` rule refuses, so the picker does not
+      // offer it.
+      final picked = video ? [?await pickPostVideo()] : await pickPostImages();
+      if (picked.isNotEmpty && mounted) setState(() => _media = picked);
     } on PostMediaException catch (failure) {
       if (mounted) {
         _reportFailure(
@@ -72,35 +77,46 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     }
   }
 
+  void _removeSlide(int index) {
+    final next = List<PickedPostMedia>.from(_media)..removeAt(index);
+    setState(() => _media = next);
+  }
+
   Future<void> _publish() async {
     if (_busy) return;
     final s = AppStrings.of(context);
     final caption = _controller.text.trim();
     final media = _media;
-    if (caption.isEmpty && media == null) return;
+    if (caption.isEmpty && media.isEmpty) return;
 
     setState(() {
       _busy = true;
       _progress = 0;
     });
-    String? mediaUrl;
+    final uploaded = <String>[];
     try {
       final repository = ref.read(feedRepositoryProvider);
       final postId = repository.newPostId();
-      if (media != null) {
-        mediaUrl = await repository.uploadPostMedia(
+      for (var index = 0; index < media.length; index++) {
+        final url = await repository.uploadPostMedia(
           postId: postId,
-          media: media,
+          media: media[index],
+          slide: index,
+          // One bar for the whole set: the fraction is the share of the files
+          // that are finished plus the part of the current one that is.
           onProgress: (fraction) {
-            if (mounted) setState(() => _progress = fraction);
+            if (mounted) {
+              setState(() => _progress = (index + fraction) / media.length);
+            }
           },
         );
+        uploaded.add(url);
       }
       await repository.createPost(
         postId: postId,
         caption: caption,
-        mediaUrl: mediaUrl,
-        mediaType: media?.mediaType ?? 'none',
+        mediaUrls: uploaded,
+        mediaType: media.isEmpty ? 'none' : media.first.mediaType,
       );
       ref.invalidate(feedPostsProvider);
       if (!mounted) return;
@@ -114,11 +130,11 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     } catch (error, stackTrace) {
       debugPrint('Unable to publish the post: $error');
       debugPrintStack(stackTrace: stackTrace);
-      if (mediaUrl != null) {
+      // Nothing links these files yet, so a half-published post would leave
+      // them unreachable forever.
+      for (final url in uploaded) {
         try {
-          await ref
-              .read(feedRepositoryProvider)
-              .deleteUnpublishedMedia(mediaUrl);
+          await ref.read(feedRepositoryProvider).deleteUnpublishedMedia(url);
         } catch (cleanupError, cleanupTrace) {
           debugPrint('Unable to clean up post media: $cleanupError');
           debugPrintStack(stackTrace: cleanupTrace);
@@ -128,44 +144,46 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
         setState(() => _busy = false);
         // A media failure is worth naming: the user needs to know the upload,
         // not the post, is what broke.
-        _reportFailure(media == null ? s.actionFailed : s.uploadFailed);
+        _reportFailure(media.isEmpty ? s.actionFailed : s.uploadFailed);
       }
     }
   }
 
-  Widget _preview(AppStrings s, PickedPostMedia media) {
-    final bytes = media.bytes;
+  Widget _preview(AppStrings s) {
+    final media = _media;
+    if (media.isEmpty) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Stack(
-        alignment: AlignmentDirectional.topEnd,
-        children: [
-          if (bytes != null && !media.isVideo)
-            ClipRRect(
-              borderRadius: AppRadius.mdBorder,
-              child: Image.memory(
-                bytes,
-                height: 200,
-                fit: BoxFit.cover,
-                width: double.infinity,
-              ),
+      child: media.first.isVideo
+          // A clip cannot be thumbnailed without another dependency, so the
+          // sheet shows what the user actually chose.
+          ? Stack(
+              alignment: AlignmentDirectional.topEnd,
+              children: [
+                _VideoPreview(media: media.first),
+                _ClearButton(
+                  tooltip: s.cancel,
+                  onPressed: () => setState(() => _media = const []),
+                ),
+              ],
             )
-          else
-            _VideoPreview(media: media),
-          Padding(
-            padding: const EdgeInsets.all(6),
-            child: IconButton(
-              tooltip: s.cancel,
-              onPressed: () => setState(() => _media = null),
-              icon: const CircleAvatar(
-                radius: 14,
-                backgroundColor: Colors.black54,
-                child: Icon(Icons.close, size: 16, color: Colors.white),
+          : SizedBox(
+              // Thumbs carry no text, so a fixed height cannot clip anything at
+              // a large text scale.
+              height: 120,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: media.length,
+                separatorBuilder: (context, index) => const SizedBox(width: 8),
+                itemBuilder: (context, index) => _SlideThumb(
+                  media: media[index],
+                  position: index + 1,
+                  onRemove: () => _removeSlide(index),
+                  tooltip: s.cancel,
+                ),
               ),
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -218,8 +236,8 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                 filled: false,
               ),
             ),
-            if (media != null) _preview(s, media),
-            if (_busy && media != null && _progress > 0)
+            _preview(s),
+            if (_busy && media.isNotEmpty && _progress > 0)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Column(
@@ -260,7 +278,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                         label: _busy ? s.publishing : s.publish,
                         loading: _busy,
                         onPressed:
-                            _controller.text.trim().isEmpty && media == null
+                            _controller.text.trim().isEmpty && media.isEmpty
                             ? null
                             : _publish,
                       ),
@@ -271,6 +289,91 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The X that sits on the top-end corner of a preview.
+class _ClearButton extends StatelessWidget {
+  const _ClearButton({required this.tooltip, required this.onPressed});
+
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: theme.colorScheme.scrim.withValues(alpha: 0.5),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        visualDensity: VisualDensity.compact,
+        color: theme.colorScheme.surface,
+        icon: const Icon(Icons.close_rounded, size: 18),
+      ),
+    );
+  }
+}
+
+/// One attached photo in the composer strip, numbered so the order the user
+/// picked in is the order the carousel will show.
+class _SlideThumb extends StatelessWidget {
+  const _SlideThumb({
+    required this.media,
+    required this.position,
+    required this.tooltip,
+    required this.onRemove,
+  });
+
+  final PickedPostMedia media;
+  final int position;
+  final String tooltip;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bytes = media.bytes;
+
+    return SizedBox(
+      width: 104,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: AppRadius.smBorder,
+            child: bytes == null
+                ? ColoredBox(color: theme.colorScheme.surfaceContainerHighest)
+                : Image.memory(bytes, fit: BoxFit.cover),
+          ),
+          PositionedDirectional(
+            top: 4,
+            start: 4,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.scrim.withValues(alpha: 0.5),
+                borderRadius: AppRadius.chipBorder,
+              ),
+              child: Text(
+                AppStrings.of(context).number(position),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.surface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          PositionedDirectional(
+            top: 2,
+            end: 2,
+            child: _ClearButton(tooltip: tooltip, onPressed: onRemove),
+          ),
+        ],
       ),
     );
   }

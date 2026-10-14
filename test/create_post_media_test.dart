@@ -23,16 +23,21 @@ final _pngBytes = base64Decode(
 );
 
 class _FakePicker extends ImagePickerPlatform {
-  _FakePicker({this.image, this.video});
+  _FakePicker({this.images = const <XFile>[], this.video});
 
-  final XFile? image;
+  final List<XFile> images;
   final XFile? video;
 
   @override
   Future<XFile?> getImageFromSource({
     required ImageSource source,
     ImagePickerOptions options = const ImagePickerOptions(),
-  }) async => image;
+  }) async => images.isEmpty ? null : images.first;
+
+  @override
+  Future<List<XFile>> getMultiImageWithOptions({
+    MultiImagePickerOptions options = const MultiImagePickerOptions(),
+  }) async => images;
 
   @override
   Future<XFile?> getVideo({
@@ -43,10 +48,10 @@ class _FakePicker extends ImagePickerPlatform {
 }
 
 class _CreatedPost {
-  const _CreatedPost(this.caption, this.mediaUrl, this.mediaType);
+  const _CreatedPost(this.caption, this.mediaUrls, this.mediaType);
 
   final String caption;
-  final String? mediaUrl;
+  final List<String> mediaUrls;
   final String mediaType;
 }
 
@@ -58,6 +63,7 @@ class _FakeFeedRepository implements FeedRepository {
   final String? createError;
   final Completer<void> uploadGate = Completer<void>();
   final List<PickedPostMedia> uploads = <PickedPostMedia>[];
+  final List<int> uploadedSlides = <int>[];
   final List<_CreatedPost> created = <_CreatedPost>[];
   final List<String> deleted = <String>[];
 
@@ -68,23 +74,27 @@ class _FakeFeedRepository implements FeedRepository {
   Future<String> uploadPostMedia({
     required String postId,
     required PickedPostMedia media,
+    int slide = 0,
     void Function(double fraction)? onProgress,
   }) async {
     uploads.add(media);
+    uploadedSlides.add(slide);
     onProgress?.call(0.4);
     await uploadGate.future;
-    return 'https://cdn.test/$postId.${media.extension}';
+    // Mirrors the real naming: slide 0 keeps the bare post id.
+    final name = slide == 0 ? postId : '$postId-$slide';
+    return 'https://cdn.test/$name.${media.extension}';
   }
 
   @override
   Future<void> createPost({
     required String postId,
     required String caption,
-    String? mediaUrl,
+    List<String> mediaUrls = const <String>[],
     String mediaType = 'none',
   }) async {
     if (createError != null) throw Exception(createError);
-    created.add(_CreatedPost(caption, mediaUrl, mediaType));
+    created.add(_CreatedPost(caption, mediaUrls, mediaType));
   }
 
   @override
@@ -97,12 +107,12 @@ class _FakeFeedRepository implements FeedRepository {
 
 Future<_FakeFeedRepository> _openSheet(
   WidgetTester tester, {
-  XFile? image,
+  List<XFile> images = const <XFile>[],
   XFile? video,
   _FakeFeedRepository? repository,
 }) async {
   final repo = repository ?? _FakeFeedRepository();
-  ImagePickerPlatform.instance = _FakePicker(image: image, video: video);
+  ImagePickerPlatform.instance = _FakePicker(images: images, video: video);
   final container = ProviderContainer(
     overrides: [
       feedRepositoryProvider.overrideWith((ref) => repo),
@@ -180,19 +190,23 @@ void main() {
     expect(media.bytes, isNull);
     expect(media.filePath, '/tmp/clip.mp4');
     expect(repo.created.single.mediaType, 'video');
-    expect(repo.created.single.mediaUrl, 'https://cdn.test/post-1.mp4');
+    expect(repo.created.single.mediaUrls, <String>[
+      'https://cdn.test/post-1.mp4',
+    ]);
     expect(find.text('Posted'), findsOneWidget);
   });
 
   testWidgets('a picked photo uploads as an image post', (tester) async {
     final repo = await _openSheet(
       tester,
-      image: XFile.fromData(
-        _pngBytes,
-        name: 'photo.png',
-        path: '/tmp/photo.png',
-        mimeType: 'image/png',
-      ),
+      images: <XFile>[
+        XFile.fromData(
+          _pngBytes,
+          name: 'photo.png',
+          path: '/tmp/photo.png',
+          mimeType: 'image/png',
+        ),
+      ],
     );
 
     await tester.tap(find.byTooltip('Add photo'));
@@ -209,7 +223,108 @@ void main() {
     expect(media.extension, 'png');
     expect(media.bytes, isNotNull);
     expect(repo.created.single.mediaType, 'image');
-    expect(repo.created.single.mediaUrl, 'https://cdn.test/post-1.png');
+    expect(repo.created.single.mediaUrls, <String>[
+      'https://cdn.test/post-1.png',
+    ]);
+  });
+
+  testWidgets('several photos upload as numbered slides in order', (
+    tester,
+  ) async {
+    final repo = await _openSheet(
+      tester,
+      images: <XFile>[
+        XFile.fromData(_pngBytes, path: '/tmp/one.png', mimeType: 'image/png'),
+        XFile.fromData(_pngBytes, path: '/tmp/two.jpg', mimeType: 'image/jpeg'),
+        XFile.fromData(
+          _pngBytes,
+          path: '/tmp/three.webp',
+          mimeType: 'image/webp',
+        ),
+      ],
+    );
+
+    await tester.tap(find.byTooltip('Add photo'));
+    await tester.pumpAndSettle();
+    // The strip shows one thumb per pick, so the order is visible before post.
+    expect(find.byType(Image), findsNWidgets(3));
+
+    await tester.tap(find.text('Post'));
+    repo.uploadGate.complete();
+    await tester.pumpAndSettle();
+
+    // One upload per photo, in the order they were picked.
+    expect(repo.uploads.map((media) => media.extension).toList(), <String>[
+      'png',
+      'jpg',
+      'webp',
+    ]);
+    expect(repo.uploadedSlides, <int>[0, 1, 2]);
+    expect(repo.created.single.mediaType, 'image');
+    expect(repo.created.single.mediaUrls, <String>[
+      'https://cdn.test/post-1.png',
+      'https://cdn.test/post-1-1.jpg',
+      'https://cdn.test/post-1-2.webp',
+    ]);
+  });
+
+  testWidgets('a removed slide is never uploaded', (tester) async {
+    final repo = await _openSheet(
+      tester,
+      images: <XFile>[
+        XFile.fromData(_pngBytes, path: '/tmp/keep.png', mimeType: 'image/png'),
+        XFile.fromData(
+          _pngBytes,
+          path: '/tmp/drop.jpg',
+          mimeType: 'image/jpeg',
+        ),
+      ],
+    );
+
+    await tester.tap(find.byTooltip('Add photo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Cancel').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(Image), findsOneWidget);
+
+    await tester.tap(find.text('Post'));
+    repo.uploadGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(repo.uploads.single.extension, 'png');
+    expect(repo.created.single.mediaUrls, <String>[
+      'https://cdn.test/post-1.png',
+    ]);
+  });
+
+  testWidgets('clearing the clip lets a caption-only post publish', (
+    tester,
+  ) async {
+    final repo = await _openSheet(
+      tester,
+      video: XFile.fromData(
+        Uint8List.fromList(<int>[0, 1, 2, 3]),
+        name: 'clip.mp4',
+        path: '/tmp/clip.mp4',
+        mimeType: 'video/mp4',
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Add video'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('clip.mp4'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'just words');
+    // The sheet only re-enables Post on the frame the typed text triggers.
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Post'));
+    await tester.pumpAndSettle();
+
+    expect(repo.uploads, isEmpty);
+    expect(repo.created.single.mediaType, 'none');
+    expect(repo.created.single.mediaUrls, isEmpty);
   });
 
   testWidgets('an unsupported pick says so instead of failing silently', (

@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +13,7 @@ import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
 import 'package:social_chat/features/feed/presentation/saved_posts_provider.dart';
+import 'package:social_chat/features/home/presentation/widgets/post_carousel.dart';
 import 'package:social_chat/features/home/presentation/widgets/post_comments_sheet.dart';
 import 'package:social_chat/features/home/presentation/widgets/post_video.dart';
 import 'package:social_chat/features/reports/data/report_repository.dart';
@@ -49,6 +49,13 @@ class _PostCardState extends ConsumerState<PostCard> {
     } finally {
       if (mounted) setState(() => _liking = false);
     }
+  }
+
+  /// Double-tap likes and never unlikes, so a second accidental burst cannot
+  /// take away a like the user meant to give.
+  void _doubleTapLike() {
+    if (widget.post.isLiked || _liking) return;
+    _toggleLike();
   }
 
   Future<void> _deletePost() async {
@@ -243,7 +250,7 @@ class _PostCardState extends ConsumerState<PostCard> {
             padding: const EdgeInsets.fromLTRB(14, 2, 14, 6),
             child: _Caption(text: post.caption),
           ),
-        _Media(post: post),
+        _Media(post: post, onDoubleTapLike: _doubleTapLike),
         Padding(
           padding: const EdgeInsets.fromLTRB(6, 2, 6, 0),
           child: Row(
@@ -310,29 +317,78 @@ class _PostCardState extends ConsumerState<PostCard> {
   }
 }
 
-class _Media extends StatelessWidget {
-  const _Media({required this.post});
+class _Media extends StatefulWidget {
+  const _Media({required this.post, required this.onDoubleTapLike});
 
   final FeedPost post;
 
+  /// Double-tapping the media likes the post. It never unlikes: an accidental
+  /// second double-tap must not silently remove a like the user gave on
+  /// purpose.
+  final VoidCallback onDoubleTapLike;
+
+  @override
+  State<_Media> createState() => _MediaState();
+}
+
+class _MediaState extends State<_Media> with SingleTickerProviderStateMixin {
+  late final AnimationController _heart = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 750),
+  );
+
+  @override
+  void dispose() {
+    _heart.dispose();
+    super.dispose();
+  }
+
+  void _burst() {
+    widget.onDoubleTapLike();
+    _heart.forward(from: 0);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final url = post.mediaUrl;
-    if (url == null || url.isEmpty) return const SizedBox(height: 4);
-    if (post.mediaType == 'video') return PostVideo(url: url);
-    return AspectRatio(
-      aspectRatio: 1,
-      child: CachedNetworkImage(
-        imageUrl: url,
-        fit: BoxFit.cover,
-        placeholder: (context, url) =>
-            ColoredBox(color: theme.colorScheme.surfaceContainerHighest),
-        errorWidget: (context, url, error) => ColoredBox(
-          color: theme.colorScheme.surfaceContainerHighest,
-          child: const Center(child: Icon(Icons.broken_image_outlined)),
+    final post = widget.post;
+    final slides = post.slides;
+    if (slides.isEmpty) return const SizedBox(height: 4);
+
+    return Stack(
+      children: [
+        post.mediaType == 'video'
+            ? PostVideo(url: slides.first, onDoubleTap: _burst)
+            : PostCarousel(urls: slides, onDoubleTap: _burst),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: AnimatedBuilder(
+              animation: _heart,
+              builder: (context, child) {
+                // One burst per double-tap: before it starts and after it ends
+                // there is nothing to paint.
+                if (!_heart.isAnimating) return const SizedBox.shrink();
+                final t = _heart.value;
+                return Opacity(
+                  opacity: t < 0.6 ? 1 : (1 - t) / 0.4,
+                  child: Transform.scale(
+                    scale:
+                        0.6 +
+                        Curves.easeOutBack.transform(t.clamp(0.0, 0.5) * 2) *
+                            0.55,
+                    child: const Center(
+                      child: Icon(
+                        Icons.favorite_rounded,
+                        size: 88,
+                        color: AppColors.brandPink,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 }

@@ -9,9 +9,14 @@ import 'package:social_chat/core/l10n/app_strings.dart';
 /// so the widget never assumes it will get a frame: it shows a spinner, then
 /// either the player or a retryable error tile.
 class PostVideo extends StatefulWidget {
-  const PostVideo({super.key, required this.url});
+  const PostVideo({super.key, required this.url, this.onDoubleTap});
 
   final String url;
+
+  /// Double-tap to like, the way the still slides work. Sharing one recognizer
+  /// with play/pause means a single tap resolves after the double-tap timeout,
+  /// which is the cost the gesture set asks for.
+  final VoidCallback? onDoubleTap;
 
   @override
   State<PostVideo> createState() => _PostVideoState();
@@ -26,6 +31,7 @@ const double _seekBarHeight = 3;
 class _PostVideoState extends State<PostVideo> {
   VideoPlayerController? _controller;
   _Stage _stage = _Stage.loading;
+  bool _muted = false;
 
   @override
   void initState() {
@@ -54,6 +60,9 @@ class _PostVideoState extends State<PostVideo> {
         return;
       }
       controller.addListener(_onTick);
+      // A clip that is re-opened (a new url, or a retry after the user muted
+      // it) keeps that choice instead of startling them with sound.
+      if (_muted) await controller.setVolume(0);
       setState(() {
         _controller = controller;
         _stage = _Stage.ready;
@@ -86,6 +95,20 @@ class _PostVideoState extends State<PostVideo> {
       await controller.pause();
     } else {
       await controller.play();
+    }
+  }
+
+  Future<void> _toggleMute() async {
+    final controller = _controller;
+    if (controller == null) return;
+    final muted = !_muted;
+    setState(() => _muted = muted);
+    try {
+      await controller.setVolume(muted ? 0 : 1);
+    } catch (error, stackTrace) {
+      debugPrint('Unable to change the video volume: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) setState(() => _muted = !muted);
     }
   }
 
@@ -146,6 +169,7 @@ class _PostVideoState extends State<PostVideo> {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _toggle,
+              onDoubleTap: widget.onDoubleTap,
               child: Semantics(
                 button: true,
                 label: controller.value.isPlaying ? s.pauseVideo : s.playVideo,
@@ -158,6 +182,25 @@ class _PostVideoState extends State<PostVideo> {
                       child: Icon(Icons.play_arrow_rounded, size: 60),
                     ),
                   ),
+                ),
+              ),
+            ),
+          ),
+          PositionedDirectional(
+            top: 8,
+            end: 8,
+            child: Material(
+              color: Colors.black54,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: IconButton(
+                tooltip: _muted ? s.unmuteVideo : s.muteVideo,
+                onPressed: _toggleMute,
+                visualDensity: VisualDensity.compact,
+                color: Colors.white,
+                icon: Icon(
+                  _muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                  size: 20,
                 ),
               ),
             ),

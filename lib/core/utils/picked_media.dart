@@ -48,6 +48,10 @@ class PostMediaException implements Exception {
 /// the request overhead instead of a confusing server-side rejection.
 const maxPostMediaBytes = 48 * 1024 * 1024;
 
+/// How many photos one carousel may hold — the same ceiling the
+/// `mediaUrls.size() <= 10` rule puts on the document.
+const maxPostSlides = 10;
+
 const _imageContentTypes = <String, String>{
   'jpg': 'image/jpeg',
   'jpeg': 'image/jpeg',
@@ -74,7 +78,23 @@ Future<PickedPostMedia?> pickPostImage({
 }) async {
   final file = await ImagePicker().pickImage(source: source);
   if (file == null) return null;
+  return _imageMedia(file);
+}
 
+/// Several photos for one carousel. The picker itself is capped at
+/// [maxPostSlides], which is the same ceiling `firestore.rules` puts on
+/// `mediaUrls`, and every file goes through the same compress-and-check path as
+/// a single photo.
+Future<List<PickedPostMedia>> pickPostImages() async {
+  final files = await ImagePicker().pickMultiImage(limit: maxPostSlides);
+  final slides = <PickedPostMedia>[];
+  for (final file in files) {
+    slides.add(await _imageMedia(file));
+  }
+  return slides;
+}
+
+Future<PickedPostMedia> _imageMedia(XFile file) async {
   final extension = _extensionOf(file.name, file.path);
   final compressed = await _compress(file);
   // Some devices fail the native compressor on very large photos, so the

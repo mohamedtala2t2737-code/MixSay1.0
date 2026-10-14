@@ -293,6 +293,8 @@ class AppStrings {
       : 'This video could not be played here.';
   String get playVideo => isArabic ? 'تشغيل' : 'Play';
   String get pauseVideo => isArabic ? 'إيقاف مؤقت' : 'Pause';
+  String get muteVideo => isArabic ? 'كتم الصوت' : 'Mute';
+  String get unmuteVideo => isArabic ? 'تشغيل الصوت' : 'Unmute';
   String get publishing => isArabic ? 'جاري النشر…' : 'Posting…';
   String get postPublished => isArabic ? 'تم النشر' : 'Posted';
   String get like => isArabic ? 'إعجاب' : 'Like';

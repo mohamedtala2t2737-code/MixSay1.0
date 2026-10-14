@@ -21,6 +21,7 @@ class FeedPost {
     required this.isLiked,
     this.avatarUrl,
     this.mediaUrl,
+    this.mediaUrls = const [],
     this.mediaType = 'none',
   });
 
@@ -36,9 +37,19 @@ class FeedPost {
   final bool isLiked;
   final String? avatarUrl;
   final String? mediaUrl;
+  final List<String> mediaUrls;
   final String mediaType;
 
   String get displayName => fullName.isNotEmpty ? fullName : username;
+
+  /// What the media slot paints. A post written before carousels existed only
+  /// carries [mediaUrl], which becomes its single slide, so nothing old needs
+  /// migrating to stay readable.
+  List<String> get slides => mediaUrls.isNotEmpty
+      ? mediaUrls
+      : (mediaUrl == null || mediaUrl!.isEmpty
+            ? const <String>[]
+            : [mediaUrl!]);
 
   factory FeedPost.fromFirestore({
     required QueryDocumentSnapshot<Map<String, dynamic>> document,
@@ -59,8 +70,19 @@ class FeedPost {
       isLiked: isLiked,
       avatarUrl: data['avatarUrl'] as String?,
       mediaUrl: data['mediaUrl'] as String?,
+      mediaUrls: _storedUrls(data['mediaUrls']),
       mediaType: data['mediaType'] as String? ?? 'none',
     );
+  }
+
+  /// Anything Firestore could hand back as a url list, reduced to the urls that
+  /// can actually be loaded.
+  static List<String> _storedUrls(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .whereType<String>()
+        .where((url) => url.isNotEmpty)
+        .toList(growable: false);
   }
 }
 
@@ -277,22 +299,56 @@ class FeedRepository {
 
   /// Author-only (see the `posts/{postId}` delete rule). Media is removed after
   /// the document so a failed storage delete leaves an orphan file, not a
-  /// post whose image is gone.
+  /// post whose image is gone. A carousel's slides are deleted one by one:
+  /// Firestore does not know about Storage, and one dead link must not stop the
+  /// rest of the files from going.
   Future<void> deletePost(FeedPost post) async {
     await _posts.doc(post.id).delete();
-    final url = post.mediaUrl;
-    if (url == null || url.isEmpty) return;
-    try {
-      await _storage.refFromURL(url).delete();
-    } catch (error, stackTrace) {
-      _logFailure('remove deleted post media', error, stackTrace);
+    for (final url in post.slides) {
+      try {
+        await _storage.refFromURL(url).delete();
+      } catch (error, stackTrace) {
+        _logFailure('remove deleted post media', error, stackTrace);
+      }
+    }
+  }
+
+  /// The slides a post is allowed to carry, ready to write.
+  ///
+  /// `firestore.rules` can inspect the count and the first slide only (the
+  /// rules language has no list macro), so every other url is checked here,
+  /// before the document is written.
+  static List<String> validatedSlides(List<String> urls, String mediaType) {
+    final slides = urls
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toList(growable: false);
+
+    switch (mediaType) {
+      case 'none':
+        if (slides.isNotEmpty) {
+          throw ArgumentError('A post without media cannot carry slides');
+        }
+        return const [];
+      case 'video':
+        if (slides.length != 1) {
+          throw ArgumentError('A video post carries exactly one clip');
+        }
+        return slides;
+      case 'image':
+        if (slides.isEmpty || slides.length > maxPostSlides) {
+          throw ArgumentError('An image post carries 1-$maxPostSlides photos');
+        }
+        return slides;
+      default:
+        throw ArgumentError.value(mediaType, 'mediaType');
     }
   }
 
   Future<void> createPost({
     required String postId,
     required String caption,
-    String? mediaUrl,
+    List<String> mediaUrls = const [],
     String mediaType = 'none',
   }) async {
     final userId = _userId;
@@ -300,11 +356,9 @@ class FeedRepository {
     if (trimmedCaption.length > 2000) {
       throw ArgumentError.value(caption, 'caption', 'Maximum length is 2000');
     }
-    if (trimmedCaption.isEmpty && (mediaUrl == null || mediaUrl.isEmpty)) {
+    final slides = validatedSlides(mediaUrls, mediaType);
+    if (trimmedCaption.isEmpty && slides.isEmpty) {
       throw ArgumentError('A post must contain text or media');
-    }
-    if (!const {'none', 'image', 'video'}.contains(mediaType)) {
-      throw ArgumentError.value(mediaType, 'mediaType');
     }
     final profile = await _currentProfile(userId);
     await _posts.doc(postId).set({
@@ -313,7 +367,12 @@ class FeedRepository {
       'fullName': profile['fullName'] as String? ?? '',
       'avatarUrl': profile['avatarUrl'],
       'caption': trimmedCaption,
-      'mediaUrl': mediaUrl,
+      // Readers that only know the old field must still find a real image, so
+      // it keeps naming the first slide.
+      'mediaUrl': slides.isEmpty ? null : slides.first,
+      // The rules require `mediaType == 'image'` whenever this key is present,
+      // so a clip or a text-only post never writes it.
+      if (mediaType == 'image') 'mediaUrls': slides,
       'mediaType': mediaType,
       'likesCount': 0,
       'commentsCount': 0,
@@ -335,10 +394,14 @@ class FeedRepository {
   Future<String> uploadPostMedia({
     required String postId,
     required PickedPostMedia media,
+    int slide = 0,
     void Function(double fraction)? onProgress,
   }) async {
     final userId = _userId;
-    final reference = _storage.ref('posts/$userId/$postId.${media.extension}');
+    final name = slide == 0
+        ? '$postId.${media.extension}'
+        : '$postId-$slide.${media.extension}';
+    final reference = _storage.ref('posts/$userId/$name');
     final metadata = SettableMetadata(contentType: media.contentType);
     final bytes = media.bytes;
     final task = bytes != null
