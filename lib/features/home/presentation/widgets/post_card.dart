@@ -116,7 +116,9 @@ class _PostCardState extends ConsumerState<PostCard> {
             children: [
               ListTile(
                 leading: Icon(
-                  saved ? Icons.bookmark_remove : Icons.bookmark_add_outlined,
+                  saved
+                      ? Icons.bookmark_remove_rounded
+                      : Icons.bookmark_add_rounded,
                 ),
                 title: Text(saved ? s.unsavePost : s.savePost),
                 onTap: () => closeAndRun(
@@ -134,7 +136,7 @@ class _PostCardState extends ConsumerState<PostCard> {
               if (isMine)
                 ListTile(
                   leading: Icon(
-                    Icons.delete_outline,
+                    Icons.delete_rounded,
                     color: Theme.of(context).colorScheme.error,
                   ),
                   title: Text(s.deletePost),
@@ -203,7 +205,7 @@ class _PostCardState extends ConsumerState<PostCard> {
               IconButton(
                 tooltip: s.postOptions,
                 onPressed: _openOptions,
-                icon: const Icon(Icons.more_vert),
+                icon: const Icon(Icons.more_vert_rounded),
               ),
             ],
           ),
@@ -226,7 +228,7 @@ class _PostCardState extends ConsumerState<PostCard> {
               IconButton(
                 tooltip: s.comments,
                 onPressed: () => showPostCommentsSheet(context, post),
-                icon: const Icon(Icons.mode_comment_outlined),
+                icon: const Icon(Icons.mode_comment_rounded),
               ),
               IconButton(
                 tooltip: s.share,
