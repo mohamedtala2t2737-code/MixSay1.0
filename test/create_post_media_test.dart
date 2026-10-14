@@ -10,6 +10,7 @@ import 'package:image_picker_platform_interface/image_picker_platform_interface.
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:social_chat/core/domain/app_user.dart';
+import 'package:social_chat/core/errors/app_exceptions.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/utils/picked_media.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
@@ -58,9 +59,11 @@ class _CreatedPost {
 /// Stands in for Firebase: it records what the composer tried to store and lets
 /// the test hold the upload open to observe progress.
 class _FakeFeedRepository implements FeedRepository {
-  _FakeFeedRepository({this.createError});
+  _FakeFeedRepository({this.createFailure});
 
-  final String? createError;
+  /// Thrown instead of recording the post, so a test can pick which half of
+  /// publishing breaks.
+  final Object? createFailure;
   final Completer<void> uploadGate = Completer<void>();
   final List<PickedPostMedia> uploads = <PickedPostMedia>[];
   final List<int> uploadedSlides = <int>[];
@@ -93,7 +96,7 @@ class _FakeFeedRepository implements FeedRepository {
     List<String> mediaUrls = const <String>[],
     String mediaType = 'none',
   }) async {
-    if (createError != null) throw Exception(createError);
+    if (createFailure != null) throw createFailure!;
     created.add(_CreatedPost(caption, mediaUrls, mediaType));
   }
 
@@ -354,7 +357,7 @@ void main() {
     final repo = await _openSheet(
       tester,
       repository: _FakeFeedRepository(
-        createError: 'firestore/permission-denied',
+        createFailure: Exception('firestore/permission-denied'),
       ),
       video: XFile.fromData(
         Uint8List.fromList(<int>[0, 1, 2, 3]),
@@ -375,6 +378,37 @@ void main() {
     // removes it instead of leaving an orphan file behind.
     expect(repo.deleted, <String>['https://cdn.test/post-1.mp4']);
     expect(repo.created, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a carousel the rules refuse says so after cleaning up', (
+    tester,
+  ) async {
+    final repo = await _openSheet(
+      tester,
+      repository: _FakeFeedRepository(
+        createFailure: const PostRejectedException(),
+      ),
+      images: <XFile>[
+        XFile.fromData(_pngBytes, path: '/tmp/one.png', mimeType: 'image/png'),
+        XFile.fromData(_pngBytes, path: '/tmp/two.jpg', mimeType: 'image/jpeg'),
+      ],
+    );
+
+    await tester.tap(find.byTooltip('Add photo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Post'));
+    repo.uploadGate.complete();
+    await tester.pumpAndSettle();
+
+    // Not "upload failed": the files reached Storage fine, the database
+    // refused the post document, and only the rules can fix that.
+    expect(find.textContaining('The server rejected the post'), findsOneWidget);
+    expect(repo.created, isEmpty);
+    expect(repo.deleted, <String>[
+      'https://cdn.test/post-1.png',
+      'https://cdn.test/post-1-1.jpg',
+    ]);
     expect(tester.takeException(), isNull);
   });
 }

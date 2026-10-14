@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:social_chat/core/errors/app_exceptions.dart';
 import 'package:social_chat/core/utils/picked_media.dart';
 
 class FeedPost {
@@ -361,23 +362,34 @@ class FeedRepository {
       throw ArgumentError('A post must contain text or media');
     }
     final profile = await _currentProfile(userId);
-    await _posts.doc(postId).set({
-      'authorId': userId,
-      'username': _profileUsername(profile),
-      'fullName': profile['fullName'] as String? ?? '',
-      'avatarUrl': profile['avatarUrl'],
-      'caption': trimmedCaption,
-      // Readers that only know the old field must still find a real image, so
-      // it keeps naming the first slide.
-      'mediaUrl': slides.isEmpty ? null : slides.first,
-      // The rules require `mediaType == 'image'` whenever this key is present,
-      // so a clip or a text-only post never writes it.
-      if (mediaType == 'image') 'mediaUrls': slides,
-      'mediaType': mediaType,
-      'likesCount': 0,
-      'commentsCount': 0,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      await _posts.doc(postId).set({
+        'authorId': userId,
+        'username': _profileUsername(profile),
+        'fullName': profile['fullName'] as String? ?? '',
+        'avatarUrl': profile['avatarUrl'],
+        'caption': trimmedCaption,
+        // Readers that only know the old field must still find a real image, so
+        // it keeps naming the first slide.
+        'mediaUrl': slides.isEmpty ? null : slides.first,
+        // Written only for a real carousel. A single photo stays exactly the
+        // document shape the currently deployed rules accept, so an un-deployed
+        // rules update can never break the ordinary post path. The rules also
+        // require `mediaType == 'image'` whenever this key is present.
+        if (slides.length > 1) 'mediaUrls': slides,
+        'mediaType': mediaType,
+        'likesCount': 0,
+        'commentsCount': 0,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } on FirebaseException catch (failure) {
+      // A rejected write is the deployed rules refusing the document, not a
+      // flaky connection. Say so: the alternative is the user retrying forever.
+      if (failure.code == 'permission-denied') {
+        throw const PostRejectedException();
+      }
+      rethrow;
+    }
   }
 
   /// Id for a post that does not exist yet, so its media can be uploaded under

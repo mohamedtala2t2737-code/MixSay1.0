@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:social_chat/core/errors/app_exceptions.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_radius.dart';
 import 'package:social_chat/core/utils/picked_media.dart';
@@ -142,9 +143,16 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
       }
       if (mounted) {
         setState(() => _busy = false);
-        // A media failure is worth naming: the user needs to know the upload,
-        // not the post, is what broke.
-        _reportFailure(media.isEmpty ? s.actionFailed : s.uploadFailed);
+        // Which half broke matters. The files failing is a connection problem
+        // the user can retry; the saved post failing is the server rules
+        // refusing the shape, where retrying changes nothing.
+        if (error is PostRejectedException) {
+          _reportFailure(s.postRejectedByRules);
+        } else if (media.isEmpty) {
+          _reportFailure(s.actionFailed);
+        } else {
+          _reportFailure(s.uploadFailed);
+        }
       }
     }
   }

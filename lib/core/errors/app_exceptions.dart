@@ -12,6 +12,13 @@ class EmailNotConfirmedException implements Exception {
   const EmailNotConfirmedException();
 }
 
+/// The database refused a write that the client was sure about — in practice
+/// the deployed Firestore rules. The user cannot fix this, so it needs its own
+/// message instead of the generic "upload failed" one.
+class PostRejectedException implements Exception {
+  const PostRejectedException();
+}
+
 String describeUsernameCheckError(Object error, AppStrings s) {
   if (error is FormatException) return s.errInvalidUsername;
 

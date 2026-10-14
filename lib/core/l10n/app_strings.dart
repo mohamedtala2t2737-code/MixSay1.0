@@ -287,6 +287,13 @@ class AppStrings {
   String get uploadFailed => isArabic
       ? 'الرفع فشل. اتأكد من الإنترنت وحاول تاني.'
       : 'Upload failed. Check your connection and try again.';
+
+  /// Shown when the server refuses the saved post itself, which for a carousel
+  /// means the deployed Firestore rules do not know the field yet. Retrying
+  /// cannot help, so the message says what is actually missing.
+  String get postRejectedByRules => isArabic
+      ? 'السيرفر رفض المنشور. قواعد داتا بيز المنشورة دلوقتي مش بسمحوا بأكثر من صورة — لازم تتحدّث، أو انشر صورة واحدة.'
+      : 'The server rejected the post. The published database rules do not allow multiple photos yet — they need updating, or post a single image.';
   String get publish => isArabic ? 'نشر' : 'Post';
   String get videoUnavailable => isArabic
       ? 'الفيديو ده ماقدرش يشتغل هنا.'
