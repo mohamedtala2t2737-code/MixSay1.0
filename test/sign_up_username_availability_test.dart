@@ -139,6 +139,48 @@ void main() {
     expect(repository.signUpCalls, 0);
   });
 
+  testWidgets('scrolls back to the first field that failed validation', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(400, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(_AvailableUsernameRepo()),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: const [
+            AppStrings.delegate,
+            ...GlobalMaterialLocalizations.delegates,
+          ],
+          supportedLocales: AppStrings.supportedLocales,
+          home: const SignUpScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Start at the bottom, where the submit button lives, so a rejected submit
+    // has to move the viewport back up to the name field on its own.
+    double pageOffset() =>
+        Scrollable.of(tester.element(find.text('Create account')))!
+            .position
+            .pixels;
+
+    await tester.ensureVisible(find.text('Create account'));
+    await tester.pumpAndSettle();
+    final bottomOffset = pageOffset();
+    expect(bottomOffset, greaterThan(0));
+
+    await tester.tap(find.text('Create account'));
+    await tester.pumpAndSettle();
+
+    expect(pageOffset(), lessThan(bottomOffset));
+    expect(find.text('This field is required'), findsWidgets);
+  });
+
   testWidgets(
     'shows a retry after lookup failure and accepts a successful retry',
     (tester) async {

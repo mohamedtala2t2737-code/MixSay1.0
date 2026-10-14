@@ -32,6 +32,20 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
 
   static final _emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
 
+  /// Top-to-bottom field order, so a rejected form can scroll to the first
+  /// problem instead of leaving the user guessing which one they missed.
+  static const _fieldOrder = [
+    'fullName',
+    'email',
+    'username',
+    'password',
+    'confirmPassword',
+    'birthDate',
+  ];
+  final Map<String, GlobalKey> _fieldKeys = {
+    for (final field in _fieldOrder) field: GlobalKey(),
+  };
+
   final Map<String, String> _errors = {};
   int? _birthDay;
   int? _birthMonth;
@@ -113,7 +127,25 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
         ..clear()
         ..addAll(errors);
     });
+    if (errors.isNotEmpty) _revealFirstError(errors.keys);
     return errors.isEmpty;
+  }
+
+  void _revealFirstError(Iterable<String> fields) {
+    final first = _fieldOrder.firstWhere(fields.contains);
+    final target = _fieldKeys[first]?.currentContext;
+    if (target == null) return;
+    // The error text is painted in this frame, so scroll once the new layout
+    // exists; scrolling during setState would use the old positions.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!target.mounted) return;
+      Scrollable.ensureVisible(
+        target,
+        alignment: 0.12,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   Future<void> _submit() async {
@@ -226,13 +258,14 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
     );
   }
 
-  Widget _buildBirthdayFields(AppStrings s) {
+  Widget _buildBirthdayFields(AppStrings s, {Key? key}) {
     final year = _birthYear ?? 2000;
     final month = _birthMonth;
     final daysInMonth = month == null ? 31 : DateTime(year, month + 1, 0).day;
     final today = DateTime.now();
 
     return Column(
+      key: key,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -391,6 +424,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         AppTextField(
+                          key: _fieldKeys['fullName'],
                           label: s.fullName,
                           icon: Icons.person_outline,
                           controller: _fullNameController,
@@ -401,6 +435,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                         ),
                         const SizedBox(height: 12),
                         AppTextField(
+                          key: _fieldKeys['email'],
                           label: s.email,
                           icon: Icons.mail_outline,
                           controller: _emailController,
@@ -412,6 +447,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                         ),
                         const SizedBox(height: 12),
                         UsernameStepView(
+                          key: _fieldKeys['username'],
                           controller: _usernameController,
                           autofocus: false,
                           errorText: _usernameAvailable == false
@@ -432,6 +468,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                         ),
                         const SizedBox(height: 12),
                         AppTextField(
+                          key: _fieldKeys['password'],
                           label: s.password,
                           icon: Icons.lock_outline,
                           controller: _passwordController,
@@ -444,6 +481,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                         ),
                         const SizedBox(height: 12),
                         AppTextField(
+                          key: _fieldKeys['confirmPassword'],
                           label: s.confirmPassword,
                           icon: Icons.lock_reset_outlined,
                           controller: _confirmPasswordController,
@@ -455,7 +493,10 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                           onSubmitted: (_) => _submit(),
                         ),
                         const SizedBox(height: 16),
-                        _buildBirthdayFields(s),
+                        _buildBirthdayFields(
+                          s,
+                          key: _fieldKeys['birthDate'],
+                        ),
                         const SizedBox(height: 20),
                         PrimaryButton(
                           label: s.createAccount,
