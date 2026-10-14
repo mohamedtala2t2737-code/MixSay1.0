@@ -494,7 +494,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Future<String> _signedImageUrl(String path) => _signedImageUrls.putIfAbsent(
     path,
-    () => ref.read(chatRepositoryProvider).getImageUrl(path),
+    () =>
+        ref.read(chatRepositoryProvider).getImageUrl(path)
+        // A cached failed future would keep every rebuild of this bubble
+        // broken; drop it so the next build tries again.
+        .catchError((Object error) {
+          _signedImageUrls.remove(path);
+          throw error;
+        }),
   );
 
   bool _isSameDay(DateTime first, DateTime second) =>
