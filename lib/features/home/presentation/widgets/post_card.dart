@@ -192,7 +192,7 @@ class _PostCardState extends ConsumerState<PostCard> {
               ),
               if (created != null)
                 Padding(
-                  padding: const EdgeInsets.only(right: 4),
+                  padding: const EdgeInsetsDirectional.only(end: 4),
                   child: Text(
                     timeAgo(created, isArabic: s.isArabic),
                     style: theme.textTheme.labelSmall?.copyWith(
