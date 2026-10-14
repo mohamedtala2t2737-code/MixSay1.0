@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/utils/time_ago.dart';
+import 'package:social_chat/core/widgets/confirmation_dialog.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
@@ -49,24 +50,13 @@ class _PostCardState extends ConsumerState<PostCard> {
 
   Future<void> _deletePost() async {
     final s = AppStrings.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(s.deletePost),
-        content: Text(s.deletePostConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(s.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(s.deletePost),
-          ),
-        ],
-      ),
+    final confirmed = await askConfirmation(
+      context,
+      title: s.deletePost,
+      message: s.deletePostConfirm,
+      confirmLabel: s.deletePost,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     try {
       await ref.read(feedRepositoryProvider).deletePost(widget.post);
       ref.invalidate(feedPostsProvider);
