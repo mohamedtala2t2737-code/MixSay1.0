@@ -106,15 +106,24 @@ lib/
 │   │   └── app_router.dart
 │   ├── theme/
 │   │   ├── app_colors.dart
+│   │   ├── app_radius.dart
+│   │   ├── app_spacing.dart
 │   │   ├── app_theme.dart
+│   │   ├── app_typography.dart
 │   │   └── theme_providers.dart
 │   ├── utils/
 │   │   ├── picked_image.dart
 │   │   └── time_ago.dart
 │   └── widgets/
+│       ├── app_list_tile.dart
+│       ├── app_settings_sheet.dart
 │       ├── app_text_field.dart
+│       ├── confirmation_dialog.dart
+│       ├── loading_skeleton.dart
 │       ├── mixsay_logo.dart
 │       ├── primary_button.dart
+│       ├── secondary_button.dart
+│       ├── section_header.dart
 │       ├── states.dart
 │       └── user_avatar.dart
 └── features/
@@ -187,7 +196,8 @@ lib/
 - `core/notifications`: تسجيل FCM، الإشعارات المحلية، فتح المحادثة، وتحديث
   حالات التسليم.
 - `core/router`: المسارات وإعادة التوجيه حسب مستخدم Firebase وحالة تأكيد البريد.
-- `core/theme` و`core/widgets`: عناصر واجهة مشتركة قابلة لإعادة الاستخدام.
+- `core/theme` و`core/widgets`: أساس التصميم المشترك: القيم الثابتة في مكان
+  واحد، والعناصر المشتركة هي التي تستخدمها.
 - `features/auth/domain`: عقد المستودع وسياسة اسم المستخدم ونتيجة التسجيل.
 - `features/auth/data`: تنفيذ التسجيل/الدخول وقراءة Firestore باستخدام Firebase.
 - `features/auth/presentation`: الشاشات والمتحكمات ومزودات Riverpod.
@@ -195,6 +205,44 @@ lib/
   الرسائل غير المرسلة.
 - `features/feed/presentation`: معاينة Home الاجتماعية؛ بيانات المنشورات
   والقصص تجريبية وليست مستمدة من Firebase.
+
+### أساس التصميم المشترك (`core/theme` و`core/widgets`)
+
+كل القيم الثابتة موجودة في أربعة ملفات، ولا يحتوي أي عنصر مشترك على رقم مكتوب
+داخل شيفرته:
+
+| الملف | الدور | أمثلة |
+| --- | --- | --- |
+| `app_colors.dart` | لوحة ألوان MixSay | `brandBlue` و`brandYellow` و`brandPink` و`brandPurple` و`brandGradient` و`onBrandGradient` |
+| `app_spacing.dart` | المسافات والفواصل | `xs 4` و`sm 8` و`md 12` و`lg 16` و`xl 20` و`xxl 24` و`block 32` و`gutter 14`، مع `gutterHorizontal` و`field` و`row` |
+| `app_radius.dart` | أنصاف أقطار الزوايا | `chip 4` و`sm 8` و`md 12` و`field 15.6` و`lg 16`، مع `chipBorder` و`mdBorder` و`fieldBorder` |
+| `app_typography.dart` | مقياس أحجام الخطوط | `micro 11` و`caption 12` و`helper 12.5` و`footnote 13` و`body 14` و`control 15` و`emphasis 16` و`title 22` و`wordmark 27`، مع `button` و`textTheme(base)` |
+
+`app_theme.dart` يمرر `AppTypography.textTheme` إلى `ThemeData` للأحجام فقط،
+وبناءً على `ThemeData(brightness: ...)` الافتراضي، فلا تتغير ألوان النصوص ولا
+مقاييس الأسطر؛ يثبت ذلك `test/theme_tokens_test.dart`. لم تُضَف سمات عامة
+للأزرار أو الحقول أو النوافذ عمدًا: ما زال هناك 16 زر Material مباشرًا على
+الشاشات، وأي سمة عامة كانت ستعيد تصميم تلك الشاشات قبل مرحلة الشاشات.
+
+العناصر المشتركة:
+
+- `UserAvatar`: صورة المستخدم مع أحرف الاسم أو أيقونة بديلة، وخيار `story`
+  بقيم `none` و`unseen` و`seen` لرسم حلقة القصص، وحالتا `busy` و`showPlus`.
+- `PrimaryButton` و`SecondaryButton`: زر أساسي متدرج وزر ثانوي بإطار، كلاهما
+  بارتفاع 48، ويتحولان إلى مؤشر تحميل مع تعطيل اللمس.
+- `AppTextField`: حقل إدخال بحد متدرج ونص مساعدة أو رسالة خطأ.
+- `SectionHeader`: عنوان قسم مع عنوان فرعي اختياري وزر على الجهة المقابلة.
+- `AppListTile`: صف ببادئة وعنوان وعنوان فرعي ولاحقة، مع نقر ونقر مطول.
+- `LoadingSkeleton`: هيكل تحميل ثابت بلا وميض، حتى لا تتعطل اختبارات
+  `pumpAndSettle`.
+- `askConfirmation(context, ...)`: نافذة تأكيد واحدة تعيد `bool`، وتُستخدم
+  الآن لحذف المنشور وتسجيل الخروج.
+- `states.dart`: `LoadingView` و`ErrorStateView` و`EmptyStateView`.
+
+كل عنصر يعمل في الاتجاهين `ltr` و`rtl` (يعتمد على `EdgeInsetsDirectional` و
+`PositionedDirectional`) ويضع حدًا لعدد الأسطر مع `ellipsis` حتى لا يفيض
+التخطيط عند تكبير خط النظام؛ تغطي الاختبارات المشتركة الاتجاهين و
+`textScaleFactor` بقيمة 3.
 
 ### إدارة الحالة
 
@@ -557,9 +605,16 @@ firebase deploy --only functions:sendChatMessageNotification --project ms-chat-b
   الدردشة (المعرّف الحتمي، الترتيب ودمج الطابور، انتقالات الحالة، الطابور
   وإعادة المحاولة)، واختباران لتحمّل التخطيط عند حجم خط نظام كبير (شريط
   التبويبات وحوار الإعدادات)، واختبارات ترتيب بطاقة المنشور والشريط المثبّت
-  والوسائط (صورة وفيديو) — 79 اختبارًا.
+  والوسائط (صورة وفيديو)، واختبارات أساس التصميم: ثوابت السمة، وحلقة الصورة
+  والقصص، والأزرار وعناوين الأقسام والصفوف، ونافذة التأكيد، وهيكل التحميل —
+  114 اختبارًا.
 - اختبارات قواعد حماية تعمل على Firebase Emulator في `security-tests/` —
   84 فحصًا كلها ناجحة.
+- أساس التصميم المشترك على فرع `feature/design-foundation`: ثوابت السمة في
+  `core/theme` (مسافات، أنصاف أقطار، أحجام خطوط)، وحلقة القصص داخل `UserAvatar`،
+  وعناصر `SecondaryButton` و`SectionHeader` و`AppListTile` و`LoadingSkeleton`
+  ونافذة `askConfirmation`، مع تحويل الشريط العلوي للقصص والمواضع الآمنة الأخرى
+  إلى هذه الثوابت دون تغيير بصري.
 - إعداد Android Firebase للمعرّف `com.ms.socialchat`.
 - نقطة تشغيل التطبيق عبر Firebase وواجهات الدخول وإنشاء الحساب.
 
@@ -587,7 +642,7 @@ firebase deploy --only functions:sendChatMessageNotification --project ms-chat-b
 7. **إعداد Release والتحقق منه:** تأكيد وجود keystore محليًا دون رفعه، مراجعة
    `android/key.properties` محليًا، زيادة `version` و`versionCode` قبل كل
    إصدار، إنتاج APK/AAB موقع، والتحقق من التوقيع والبصمة على الملف الناتج.
-8. **اختبارات أمنية وقواعد:** تم. `security-tests/run.mjs` يشغّل 76 فحصًا على
+8. **اختبارات أمنية وقواعد:** تم. `security-tests/run.mjs` يشغّل 84 فحصًا على
    Firebase Emulator ويغطي الوصول المسموح والمرفوض والحدود والطول والتحديثات
    وحالات المستخدم غير المؤكد. بقي أن تُضاف اختبارات Dart end-to-end ضد
    Firestore حقيقي (المحاكى يغطي القواعد لا الواجهة).
@@ -654,6 +709,24 @@ flutter config --android-sdk="D:\New folder\Android\Sdk"
 فلذلك شُغّل وقتها من ملف `.bat` مؤقت. يُستحسن تصحيح متغيّرات البيئة في Windows
 نفسها بدل الاعتماد على الإعداد.
 
+سجل التحقق على فرع `feature/design-foundation` (أساس التصميم المشترك: ثوابت
+السمة، والعناصر المشتركة، وتوحيد نافذة التأكيد، وتوجيه المواضع الآمنة إلى
+الثوابت دون تغيير أي شكل):
+
+- `flutter analyze`: لا مشكلات.
+- `flutter test`: 114 اختبارًا، كلها ناجح.
+- `flutter build apk --release --split-per-abi`: ناجح، الناتج في
+  `build/app/outputs/flutter-apk/`: `app-arm64-v8a-release.apk` (22.2 MB) و
+  `app-armeabi-v7a-release.apk` (19.9 MB) و`app-x86_64-release.apk` (23.7 MB).
+- `npm --prefix security-tests test`: 84 فحصًا، كلها ناجح، بعد إعادة تشغيلها
+  على هذا الفرع للتأكد أن إعادة بناء العناصر المشتركة لم تكسر النشر.
+
+لم تُلمس قواعد الحماية ولا مسارات Storage في هذه المرحلة، فعدد فحوص المحاكى
+كما هو (تفصيل القواعد في سجل `feature/home-ui-and-media-posts` بالأسفل).
+لا يوجد محاكي أو هاتف على هذا الجهاز: الظهور النهائي على شاشة حقيقية، ودوران
+الصورة داخل حلقة القصص، والنص العربي الطويل على أجهزة مختلفة لم يُتحقق منها
+يدويًا؛ التحقق من الاتجاهين وأحجام الخط الكبيرة مثبت بالاختبارات فقط.
+
 سجل التحقق على فرع `feature/home-ui-and-media-posts`
 (شريط علوي مثبّت الاتجاه، شريط سفلي مسطّح بلا نتوء، نشر الصور والفيديو وتشغيلها في البطاقة):
 
@@ -712,3 +785,13 @@ Push ولا توقيع نسخة Release للمخزن.
 - كل عملية على القواعد لها مقابل في `security-tests/run.mjs`: لو غيّرت
   `firestore.rules` أو شكل الرسالة في `ChatRepository` فحدّث الاختبارات وأعد
   تشغيلها قبل النشر.
+- بقايا الأنماط المكتوبة يدويًا على الشاشات (فقاعات الدردشة، شريط البداية، عارض
+  القصص، شاشتا الدخول وإنشاء الحساب، وكلمة MixSay في الشريط العلوي) لم توجَّه
+  إلى الثوابت عمدًا: تغييرها الآن يعني إعادة تصميم شاشة لم يطلبها أحد، وهي من
+  مرحلة الشاشات.
+- `core/theme` صار المصدر الوحيد لأرقام العناصر المشتركة. أي رقم جديد في عنصر
+  مشترك يجب أن يصبح قيمة في `AppSpacing` أو `AppRadius` أو `AppTypography` أولًا،
+  ولو تغيّر مقياس الخطوط فحدّث `test/theme_tokens_test.dart` الذي يثبّت الأحجام
+  ويثبت أن الألوان ما زالت من السمة الافتراضية.
+- `askConfirmation` لا تحتوي نسخة حمراء للأفعال المدمّرة (حذف/خروج) لأن ألوان
+  MixSay لم تُغيَّر؛ إضافة لون تحذيري قرار مراجعة قبل مرحلة الشاشات.
