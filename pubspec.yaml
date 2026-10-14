@@ -52,6 +52,7 @@ dependencies:
   path_provider: ^2.1.5
   http: ^1.6.0
   firebase_app_check: ^0.4.8
+  video_player: ^2.14.1
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +64,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  video_player_platform_interface: ^6.9.0
+  image_picker_platform_interface: ^2.11.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

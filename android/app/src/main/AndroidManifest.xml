@@ -2,6 +2,15 @@
     <!-- Network access for Firebase and chat media. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Declaring CAMERA is what image_picker's Android side asks for before it
+         opens the shutter (stories and the composer can shoot from the camera).
+         required="false" keeps the app installable on camera-less devices.
+         Gallery/video picks go through the system photo picker, which needs no
+         READ_MEDIA_* permission on Android 13+. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false"/>
     <application
         android:label="MixSay"
         android:name="${applicationName}"

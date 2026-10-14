@@ -275,7 +275,24 @@ class AppStrings {
       : 'Be the first to post something today.';
   String get postCaptionHint => isArabic ? 'اكتب حاجه…' : 'Write a caption…';
   String get attachPhoto => isArabic ? 'إضافة صورة' : 'Add photo';
+  String get attachVideo => isArabic ? 'إضافة فيديو' : 'Add video';
+  String get mediaTooLarge => isArabic
+      ? 'الملف أكبر من ٤٨ ميجا. اختار ملف أصغر.'
+      : 'That file is over 48 MB. Pick a smaller one.';
+  String get mediaUnsupported => isArabic
+      ? 'النوع ده مش مدعوم. الصور JPG/PNG والفيديو MP4/MOV.'
+      : 'Unsupported type. Images (JPG/PNG) and videos (MP4/MOV) only.';
+  String uploadProgress(int percent) =>
+      isArabic ? 'جاري الرفع… ${number(percent)}٪' : 'Uploading… $percent%';
+  String get uploadFailed => isArabic
+      ? 'الرفع فشل. اتأكد من الإنترنت وحاول تاني.'
+      : 'Upload failed. Check your connection and try again.';
   String get publish => isArabic ? 'نشر' : 'Post';
+  String get videoUnavailable => isArabic
+      ? 'الفيديو ده ماقدرش يشتغل هنا.'
+      : 'This video could not be played here.';
+  String get playVideo => isArabic ? 'تشغيل' : 'Play';
+  String get pauseVideo => isArabic ? 'إيقاف مؤقت' : 'Pause';
   String get publishing => isArabic ? 'جاري النشر…' : 'Posting…';
   String get postPublished => isArabic ? 'تم النشر' : 'Posted';
   String get like => isArabic ? 'إعجاب' : 'Like';

@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+
+import 'package:social_chat/core/utils/picked_media.dart';
 
 class FeedPost {
   const FeedPost({
@@ -321,15 +325,39 @@ class FeedRepository {
   /// a matching path before the document is written.
   String newPostId() => _posts.doc().id;
 
+  /// Uploads the attached photo or clip under the author's own id and returns
+  /// its download URL.
+  ///
+  /// The explicit `contentType` is not decoration: without it Storage infers
+  /// `application/octet-stream` and `storage.rules` refuses the write. Videos
+  /// stream from disk with `putFile` so a large clip never lands in the heap,
+  /// and [onProgress] receives a 0..1 fraction while it goes.
   Future<String> uploadPostMedia({
     required String postId,
-    required Uint8List bytes,
-    required String contentType,
-    required String extension,
+    required PickedPostMedia media,
+    void Function(double fraction)? onProgress,
   }) async {
     final userId = _userId;
-    final reference = _storage.ref('posts/$userId/$postId.$extension');
-    await reference.putData(bytes, SettableMetadata(contentType: contentType));
+    final reference = _storage.ref('posts/$userId/$postId.${media.extension}');
+    final metadata = SettableMetadata(contentType: media.contentType);
+    final bytes = media.bytes;
+    final task = bytes != null
+        ? reference.putData(bytes, metadata)
+        : reference.putFile(File(media.filePath!), metadata);
+
+    final progress = onProgress == null
+        ? null
+        : task.snapshotEvents.listen((snapshot) {
+            if (snapshot.totalBytes <= 0) return;
+            onProgress(
+              (snapshot.bytesTransferred / snapshot.totalBytes).clamp(0.0, 1.0),
+            );
+          });
+    try {
+      await task;
+    } finally {
+      await progress?.cancel();
+    }
     return reference.getDownloadURL();
   }
 

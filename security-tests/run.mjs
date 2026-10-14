@@ -803,6 +803,117 @@ await check('a user can post media under their own id', async () => {
   );
 });
 
+// These four cases are the exact shape FeedRepository.uploadPostMedia and
+// createPost send, replayed after the media-posting report. They pin down that
+// the rules already allow video, and that they only reject it when the
+// contentType is missing or belongs to somebody else's folder.
+const postBytes = new Uint8Array(64 * 1024);
+const postMediaPath = (uid, name) => `posts/${uid}/${name}`;
+
+await check('the app jpeg upload is accepted for the author', async () => {
+  await assertSucceeds(
+    uploadBytes(
+      ref(user(ALICE).storage(), postMediaPath(ALICE, 'P1.jpg')),
+      postBytes,
+      { contentType: 'image/jpeg' },
+    ),
+  );
+});
+await check('an mp4 upload is accepted for the author', async () => {
+  await assertSucceeds(
+    uploadBytes(
+      ref(user(ALICE).storage(), postMediaPath(ALICE, 'P2.mp4')),
+      postBytes,
+      { contentType: 'video/mp4' },
+    ),
+  );
+});
+await check('media with no contentType is refused', async () => {
+  // Storage infers application/octet-stream when metadata is missing, and the
+  // rules only take image/* and video/*.
+  await assertFails(
+    uploadBytes(
+      ref(user(ALICE).storage(), postMediaPath(ALICE, 'clip')),
+      postBytes,
+    ),
+  );
+});
+await check('a file that is not an image or a video is refused', async () => {
+  await assertFails(
+    uploadBytes(
+      ref(user(ALICE).storage(), postMediaPath(ALICE, 'P3.mp4')),
+      postBytes,
+      { contentType: 'application/x-msdownload' },
+    ),
+  );
+});
+await check('an account with an unverified email cannot upload media', async () => {
+  const context = testEnv.authenticatedContext(ALICE, {
+    email_verified: false,
+  });
+  await assertFails(
+    uploadBytes(
+      ref(context.storage(), postMediaPath(ALICE, 'P4.jpg')),
+      postBytes,
+      { contentType: 'image/jpeg' },
+    ),
+  );
+});
+await check('another signed-in reader can open post media', async () => {
+  const storage = user(ALICE).storage();
+  await uploadBytes(
+    ref(storage, postMediaPath(ALICE, 'P5.jpg')),
+    postBytes,
+    { contentType: 'image/jpeg' },
+  );
+  await assertSucceeds(
+    getDownloadURL(
+      ref(user(BOB).storage(), postMediaPath(ALICE, 'P5.jpg')),
+    ),
+  );
+  await assertFails(
+    getDownloadURL(
+      ref(
+        testEnv.unauthenticatedContext().storage(),
+        postMediaPath(ALICE, 'P5.jpg'),
+      ),
+    ),
+  );
+});
+
+const postDoc = (mediaType, mediaUrl, caption) => ({
+  authorId: ALICE,
+  username: ALICE,
+  fullName: `Test ${ALICE}`,
+  avatarUrl: null,
+  caption,
+  mediaUrl,
+  mediaType,
+  likesCount: 0,
+  commentsCount: 0,
+  createdAt: serverTimestamp(),
+});
+
+await check('a video post document is accepted', async () => {
+  await assertSucceeds(
+    setDoc(
+      doc(db(ALICE), 'posts', 'videoPost'),
+      postDoc('video', 'https://example.com/P2.mp4', 'watch this'),
+    ),
+  );
+});
+await check('a media-only post is accepted, a text-less empty one is not', async () => {
+  await assertSucceeds(
+    setDoc(
+      doc(db(ALICE), 'posts', 'imageOnlyPost'),
+      postDoc('image', 'https://example.com/P1.jpg', ''),
+    ),
+  );
+  await assertFails(
+    setDoc(doc(db(ALICE), 'posts', 'emptyPost'), postDoc('none', null, '')),
+  );
+});
+
 await testEnv.cleanup();
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
