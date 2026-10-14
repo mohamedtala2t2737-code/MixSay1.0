@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
+import 'app_typography.dart';
 
 class AppTheme {
   AppTheme._();
@@ -42,6 +43,11 @@ class AppTheme {
       brightness: brightness,
       colorScheme: scheme,
       scaffoldBackgroundColor: background,
+      // Only the sizes are pinned: the platform default supplies the metrics, so
+      // no line of text moves when this theme is adopted.
+      textTheme: AppTypography.textTheme(
+        ThemeData(brightness: brightness).textTheme,
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: background,
         foregroundColor: onSurface,
