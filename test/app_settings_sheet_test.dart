@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/l10n/locale_providers.dart';
+import 'package:social_chat/core/prefs/startup_preferences.dart';
 import 'package:social_chat/core/theme/theme_providers.dart';
 import 'package:social_chat/core/widgets/app_settings_sheet.dart';
 
@@ -47,9 +48,7 @@ void main() {
     expect(AppStrings.of(captured).isArabic, isTrue);
   });
 
-  testWidgets('the settings sheet switches language and theme', (
-    tester,
-  ) async {
+  testWidgets('the settings sheet switches language and theme', (tester) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
@@ -89,28 +88,39 @@ void main() {
     expect(prefs.getString('app_theme_mode'), 'dark');
   });
 
-  test('restore() re-applies the stored language and theme', () async {
-    SharedPreferences.setMockInitialValues({
-      'app_locale': 'ar',
-      'app_theme_mode': 'light',
-    });
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
+  test(
+    'the stored language and theme are ready for the very first frame',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'app_locale': 'ar',
+        'app_theme_mode': 'light',
+      });
+      final container = ProviderContainer(
+        overrides: [
+          startupPreferencesProvider.overrideWithValue(
+            await StartupPreferences.read(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
 
-    await container.read(localeControllerProvider.notifier).restore();
-    await container.read(themeModeProvider.notifier).restore();
-
-    expect(container.read(localeControllerProvider), const Locale('ar'));
-    expect(container.read(themeModeProvider), ThemeMode.light);
-  });
+      expect(container.read(localeControllerProvider), const Locale('ar'));
+      expect(container.read(themeModeProvider), ThemeMode.light);
+    },
+  );
 
   test('an unknown stored value falls back to the system theme', () async {
     SharedPreferences.setMockInitialValues({'app_theme_mode': 'neon'});
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      overrides: [
+        startupPreferencesProvider.overrideWithValue(
+          await StartupPreferences.read(),
+        ),
+      ],
+    );
     addTearDown(container.dispose);
 
-    await container.read(themeModeProvider.notifier).restore();
-
     expect(container.read(themeModeProvider), ThemeMode.system);
+    expect(container.read(localeControllerProvider), isNull);
   });
 }

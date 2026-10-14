@@ -2,20 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:social_chat/core/prefs/startup_preferences.dart';
+
 /// null means "follow the device locale".
 class LocaleController extends Notifier<Locale?> {
-  static const _prefsKey = 'app_locale';
+  static const _prefsKey = StartupPreferences.localeKey;
   static const _systemValue = 'system';
 
+  /// The stored value is read before `runApp`, so the first frame is already
+  /// in the right language instead of flashing the device locale.
   @override
-  Locale? build() => null;
-
-  /// Applies the stored choice. The app starts on the device locale until this
-  /// completes, so a first-run user never sees a persisted-value delay.
-  Future<void> restore() async {
-    final code = await _read();
-    if (code != null && (code == 'ar' || code == 'en')) state = Locale(code);
-  }
+  Locale? build() => ref.read(startupPreferencesProvider).locale;
 
   void setLocale(Locale locale) {
     state = locale;
@@ -35,23 +32,17 @@ class LocaleController extends Notifier<Locale?> {
     );
   }
 
-  Future<String?> _read() async {
-    try {
-      return (await SharedPreferences.getInstance()).getString(_prefsKey);
-    } catch (error) {
-      debugPrint('Unable to read the saved locale: $error');
-      return null;
-    }
-  }
-
   void _write(String value) {
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setString(_prefsKey, value);
-    }).catchError((Object error) {
-      debugPrint('Unable to save the locale: $error');
-    });
+    SharedPreferences.getInstance()
+        .then((prefs) {
+          prefs.setString(_prefsKey, value);
+        })
+        .catchError((Object error) {
+          debugPrint('Unable to save the locale: $error');
+        });
   }
 }
 
-final localeControllerProvider =
-    NotifierProvider<LocaleController, Locale?>(LocaleController.new);
+final localeControllerProvider = NotifierProvider<LocaleController, Locale?>(
+  LocaleController.new,
+);

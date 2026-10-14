@@ -25,8 +25,6 @@ class _SocialChatAppState extends ConsumerState<SocialChatApp> {
   @override
   void initState() {
     super.initState();
-    unawaited(ref.read(localeControllerProvider.notifier).restore());
-    unawaited(ref.read(themeModeProvider.notifier).restore());
     unawaited(ref.read(savedPostsProvider.notifier).restore());
     unawaited(
       ChatNotificationService.instance.initialize(

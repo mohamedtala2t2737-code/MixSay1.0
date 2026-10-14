@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:social_chat/app.dart';
+import 'package:social_chat/core/prefs/startup_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,5 +23,14 @@ Future<void> main() async {
     debugPrint('App Check is unavailable: $error');
     debugPrintStack(stackTrace: stackTrace);
   }
-  runApp(const ProviderScope(child: SocialChatApp()));
+  runApp(
+    ProviderScope(
+      overrides: [
+        startupPreferencesProvider.overrideWithValue(
+          await StartupPreferences.read(),
+        ),
+      ],
+      child: const SocialChatApp(),
+    ),
+  );
 }
