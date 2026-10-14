@@ -193,7 +193,12 @@ class _StoryViewerPageState extends ConsumerState<StoryViewerPage> {
   }
 
   void _handleTap(double dx, double width) {
-    if (dx < width * 0.35) {
+    // In RTL the story order runs right to left, so the rewind strip moves to
+    // the right edge instead of the left one.
+    final distanceFromStart = Directionality.of(context) == TextDirection.rtl
+        ? width - dx
+        : dx;
+    if (distanceFromStart < width * 0.35) {
       _rewind();
     } else {
       _advance();
