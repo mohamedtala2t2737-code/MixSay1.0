@@ -109,7 +109,12 @@ class _PostCommentsSheetState extends ConsumerState<_PostCommentsSheet> {
               error: (error, stackTrace) {
                 debugPrint('Unable to load comments: $error');
                 debugPrintStack(stackTrace: stackTrace);
-                return ErrorStateView(message: s.loadFailed);
+                return ErrorStateView(
+                  message: s.loadFailed,
+                  onRetry: () => ref.invalidate(
+                    feedCommentsProvider(widget.post.id),
+                  ),
+                );
               },
               data: (items) {
                 if (items.isEmpty) {
