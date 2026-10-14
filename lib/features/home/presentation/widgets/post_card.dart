@@ -30,12 +30,9 @@ class _PostCardState extends ConsumerState<PostCard> {
   Future<void> _toggleLike() async {
     if (_liking) return;
     final s = AppStrings.of(context);
-    final username = ref.read(currentProfileProvider).value?.username ?? '';
     setState(() => _liking = true);
     try {
-      await ref
-          .read(feedRepositoryProvider)
-          .toggleLike(post: widget.post, username: username);
+      await ref.read(feedRepositoryProvider).toggleLike(post: widget.post);
     } catch (error, stackTrace) {
       debugPrint('Unable to update the like: $error');
       debugPrintStack(stackTrace: stackTrace);

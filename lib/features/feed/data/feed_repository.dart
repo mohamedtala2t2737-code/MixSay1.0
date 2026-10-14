@@ -195,11 +195,24 @@ class FeedRepository {
             .toList(growable: false),
       );
 
-  Future<void> toggleLike({
-    required FeedPost post,
-    required String username,
-  }) async {
+  /// The acting user's public profile. Firestore rules stamp `username` into
+  /// posts, likes and comments, so it is read from the server instead of from a
+  /// UI cache that may still be loading.
+  Future<Map<String, dynamic>> _currentProfile(String userId) async {
+    final profile = await _firestore
+        .collection('publicProfiles')
+        .doc(userId)
+        .get();
+    final data = profile.data();
+    if (!profile.exists || data == null) {
+      throw StateError('Complete your profile before using the MixSay feed');
+    }
+    return data;
+  }
+
+  Future<void> toggleLike({required FeedPost post}) async {
     final userId = _userId;
+    final username = _profileUsername(await _currentProfile(userId));
     final postReference = _posts.doc(post.id);
     final likeReference = postReference.collection('likes').doc(userId);
     var nowLiked = false;
@@ -207,11 +220,10 @@ class FeedRepository {
       final postSnapshot = await transaction.get(postReference);
       final likeSnapshot = await transaction.get(likeReference);
       if (!postSnapshot.exists) throw StateError('Post no longer exists');
-      final likeCount = _safeInt(postSnapshot.data()?['likesCount']);
       if (likeSnapshot.exists) {
         transaction.delete(likeReference);
         transaction.update(postReference, {
-          'likesCount': likeCount > 0 ? likeCount - 1 : 0,
+          'likesCount': FieldValue.increment(-1),
         });
       } else {
         transaction.set(likeReference, {
@@ -219,7 +231,9 @@ class FeedRepository {
           'username': username,
           'createdAt': FieldValue.serverTimestamp(),
         });
-        transaction.update(postReference, {'likesCount': likeCount + 1});
+        transaction.update(postReference, {
+          'likesCount': FieldValue.increment(1),
+        });
         nowLiked = true;
       }
     });
@@ -228,10 +242,10 @@ class FeedRepository {
 
   Future<void> addComment({
     required String postId,
-    required String username,
     required String content,
   }) async {
     final userId = _userId;
+    final username = _profileUsername(await _currentProfile(userId));
     final trimmed = content.trim();
     if (trimmed.isEmpty || trimmed.length > 1000) {
       throw ArgumentError.value(
@@ -252,7 +266,7 @@ class FeedRepository {
         'createdAt': FieldValue.serverTimestamp(),
       });
       transaction.update(postReference, {
-        'commentsCount': _safeInt(post.data()?['commentsCount']) + 1,
+        'commentsCount': FieldValue.increment(1),
       });
     });
   }
@@ -272,6 +286,7 @@ class FeedRepository {
   }
 
   Future<void> createPost({
+    required String postId,
     required String caption,
     String? mediaUrl,
     String mediaType = 'none',
@@ -287,19 +302,12 @@ class FeedRepository {
     if (!const {'none', 'image', 'video'}.contains(mediaType)) {
       throw ArgumentError.value(mediaType, 'mediaType');
     }
-    final profile = await _firestore
-        .collection('publicProfiles')
-        .doc(userId)
-        .get();
-    final data = profile.data();
-    if (!profile.exists || data == null) {
-      throw StateError('Complete your profile before creating a post');
-    }
-    await _posts.add({
+    final profile = await _currentProfile(userId);
+    await _posts.doc(postId).set({
       'authorId': userId,
-      'username': data['username'] as String? ?? '',
-      'fullName': data['fullName'] as String? ?? '',
-      'avatarUrl': data['avatarUrl'],
+      'username': _profileUsername(profile),
+      'fullName': profile['fullName'] as String? ?? '',
+      'avatarUrl': profile['avatarUrl'],
       'caption': trimmedCaption,
       'mediaUrl': mediaUrl,
       'mediaType': mediaType,
@@ -342,3 +350,11 @@ class FeedRepository {
 
 int _safeInt(dynamic value) =>
     value is int ? value : int.tryParse(value?.toString() ?? '') ?? 0;
+
+String _profileUsername(Map<String, dynamic> profile) {
+  final username = profile['username'] as String? ?? '';
+  if (username.isEmpty) {
+    throw StateError('Complete your profile before using the MixSay feed');
+  }
+  return username;
+}
