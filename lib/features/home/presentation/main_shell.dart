@@ -31,15 +31,19 @@ class _MainShellState extends ConsumerState<MainShell> {
       icon: _tab == 0 ? Icons.menu_rounded : null,
     );
     return switch (_tab) {
-      0 => AppBar(
-        centerTitle: true,
-        title: const _MixSayWordmark(),
-        leading: IconButton(
-          tooltip: s.search,
-          icon: const Icon(Icons.search),
-          onPressed: () => context.push('/search'),
+      0 => _PinnedAppBar(
+        child: AppBar(
+          centerTitle: true,
+          title: const _MixSayWordmark(),
+          leading: settings,
+          actions: [
+            IconButton(
+              tooltip: s.search,
+              icon: const Icon(Icons.search),
+              onPressed: () => context.push('/search'),
+            ),
+          ],
         ),
-        actions: [settings],
       ),
       1 => AppBar(
         title: Text(s.messages),
@@ -81,6 +85,23 @@ class _MainShellState extends ConsumerState<MainShell> {
         onCreate: () => showCreatePostSheet(context),
       ),
     );
+  }
+}
+
+/// Pins the home bar to left-to-right so its slots keep their physical sides:
+/// menu on the left edge, search on the right edge, in Arabic as well as
+/// English. Only the bar is pinned — the body still mirrors with the language.
+class _PinnedAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _PinnedAppBar({required this.child});
+
+  final PreferredSizeWidget child;
+
+  @override
+  Size get preferredSize => child.preferredSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(textDirection: TextDirection.ltr, child: child);
   }
 }
 

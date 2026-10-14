@@ -14,6 +14,7 @@ import 'package:social_chat/features/chat/chat_repository.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
 import 'package:social_chat/features/home/presentation/main_shell.dart';
+import 'package:social_chat/features/home/presentation/home_tab.dart';
 import 'package:social_chat/features/notifications/data/notification_repository.dart';
 import 'package:social_chat/features/notifications/presentation/notification_providers.dart';
 import 'package:social_chat/features/stories/data/story_repository.dart';
@@ -90,6 +91,46 @@ void main() {
     );
     expect(AppColors.darkBackground, const Color(0xFF121212));
   });
+
+  for (final locale in [const Locale('en'), const Locale('ar')]) {
+    final direction = locale.languageCode == 'ar'
+        ? TextDirection.rtl
+        : TextDirection.ltr;
+
+    testWidgets(
+      'the home bar pins menu left and search right in ${locale.languageCode}',
+      (tester) async {
+        _usePhoneViewport(tester);
+        await tester.pumpWidget(_harness(locale));
+        await tester.pumpAndSettle();
+
+        final menuX = _centerX(tester, find.byIcon(Icons.menu_rounded));
+        final searchX = _centerX(tester, find.byIcon(Icons.search));
+        final wordmarkX = _centerX(tester, find.text('MixSay'));
+
+        // Physical sides, not start/end: an Arabic user must not get them
+        // swapped, and the wordmark must not drift because the two icons have
+        // different widths.
+        expect(menuX, lessThan(60));
+        expect(searchX, greaterThan(390 - 60));
+        expect(wordmarkX, closeTo(195, 2));
+
+        // Only the bar is pinned; the screen behind it still mirrors.
+        expect(
+          Directionality.of(tester.element(find.byType(MainShell))),
+          direction,
+        );
+        expect(
+          Directionality.of(tester.element(find.byIcon(Icons.search))),
+          TextDirection.ltr,
+        );
+        expect(
+          Directionality.of(tester.element(find.byType(HomeTab))),
+          direction,
+        );
+      },
+    );
+  }
 
   testWidgets('the curved bar keeps the create button centred in LTR', (
     tester,
