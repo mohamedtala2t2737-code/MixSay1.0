@@ -70,10 +70,15 @@ android {
             )
             // Without key.properties the release APK would be UNSIGNED and Android
             // refuses to install it ("App not installed"). Fall back to the debug
-            // key so test builds install. Use a real keystore for Google Play.
+            // key so test builds install, but say so loudly: a debug-signed release
+            // cannot be uploaded to Google Play or upgraded by a real build.
             signingConfig = if (releaseSigningConfigured) {
                 signingConfigs.getByName("release")
             } else {
+                logger.warn(
+                    "MixSay: no android/key.properties found - this release APK is " +
+                        "signed with the DEBUG key and is not publishable.",
+                )
                 signingConfigs.getByName("debug")
             }
         }
