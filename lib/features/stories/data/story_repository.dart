@@ -71,6 +71,10 @@ class StoryRepository {
 
   static const storyPageSize = 60;
 
+  /// Who watched a story, and how many the delete query reads at a time. The
+  /// `viewers` rules cap a list query at this same number.
+  static const viewerPageSize = 200;
+
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
@@ -166,10 +170,32 @@ class StoryRepository {
   }
 
   Future<void> deleteStory(Story story) async {
-    // Remove the document first: a leftover media file is recoverable, a
+    final reference = _stories.doc(story.id);
+    // The audience goes first: its rules read the parent story to decide who is
+    // allowed to write, so once the story is gone every viewer document becomes
+    // undeletable and stays in the database forever.
+    await _clearViewers(reference);
+    // Remove the document before the media: a leftover file is recoverable, a
     // story that points at deleted media is not.
-    await _stories.doc(story.id).delete();
+    await reference.delete();
     await _deleteMedia(story.mediaUrl);
+  }
+
+  /// Deletes who watched this story, `viewerPageSize` documents at a time.
+  Future<void> _clearViewers(
+    DocumentReference<Map<String, dynamic>> story,
+  ) async {
+    final viewers = story.collection('viewers');
+    while (true) {
+      final page = await viewers.limit(viewerPageSize).get();
+      if (page.docs.isEmpty) return;
+      final batch = _firestore.batch();
+      for (final document in page.docs) {
+        batch.delete(document.reference);
+      }
+      await batch.commit();
+      if (page.docs.length < viewerPageSize) return;
+    }
   }
 
   Future<void> _deleteMedia(String url) async {
