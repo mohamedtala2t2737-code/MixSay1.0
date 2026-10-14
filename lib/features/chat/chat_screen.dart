@@ -40,6 +40,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _hasMore = true;
   bool _hasLoadedOlder = false;
   bool _sending = false;
+  Object? _messagesStreamError;
   QueryDocumentSnapshot<Map<String, dynamic>>? _oldestMessageDocument;
   ChatConversationInfo? _conversation;
   List<ChatMessage> _messages = [];
@@ -301,6 +302,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _subscribeToMessages() {
+    _messageSubscription?.cancel();
     _messageSubscription = ref
         .read(chatRepositoryProvider)
         .watchRecentMessages(widget.conversationId)
@@ -309,12 +311,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           onError: (Object error, StackTrace stackTrace) {
             debugPrint('Unable to subscribe to chat messages: $error');
             debugPrintStack(stackTrace: stackTrace);
+            if (!mounted) return;
+            setState(() => _messagesStreamError = error);
           },
         );
   }
 
+  void _retryMessageSubscription() {
+    setState(() {
+      _messagesStreamError = null;
+      _loading = true;
+    });
+    _loadMessages();
+    _subscribeToMessages();
+  }
+
   void _handleMessageChanges(List<ChatMessage> messages) {
     if (!mounted) return;
+    if (_messagesStreamError != null) {
+      setState(() => _messagesStreamError = null);
+    }
     final nearNewest =
         !_scrollController.hasClients ||
         _scrollController.position.pixels <= 80;
@@ -355,19 +371,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void _insertOrReplaceMessages(List<ChatMessage> messages) {
     if (!mounted) return;
     setState(() {
-      for (final message in messages) {
-        final index = _messages.indexWhere(
-          (item) =>
-              item.id == message.id ||
-              (message.clientId != null && item.clientId == message.clientId),
-        );
-        if (index == -1) {
-          _messages.add(message);
-        } else {
-          _messages[index] = message;
-        }
-      }
-      _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      _messages = ChatRepository.mergeMessages(_messages, messages);
     });
   }
 
@@ -415,7 +419,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final clientId = message.clientId;
     if (clientId == null) return;
     try {
-      await ref.read(chatRepositoryProvider).deletePendingMessage(clientId);
+      await ref
+          .read(chatRepositoryProvider)
+          .deleteMessage(
+            conversationId: message.conversationId,
+            clientId: clientId,
+          );
       if (!mounted) return;
       setState(() {
         _messages.removeWhere(
@@ -478,7 +487,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Future<String> _signedImageUrl(String path) => _signedImageUrls.putIfAbsent(
     path,
-    () => ref.read(chatRepositoryProvider).getImageUrl(path),
+    () =>
+        ref.read(chatRepositoryProvider).getImageUrl(path)
+        // A cached failed future would keep every rebuild of this bubble
+        // broken; drop it so the next build tries again.
+        .catchError((Object error) {
+          _signedImageUrls.remove(path);
+          throw error;
+        }),
   );
 
   bool _isSameDay(DateTime first, DateTime second) =>
@@ -545,6 +561,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               )
             else ...[
+              if (_messagesStreamError != null)
+                Container(
+                  width: double.infinity,
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s.loadFailed,
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onErrorContainer,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _retryMessageSubscription,
+                        child: Text(s.retry),
+                      ),
+                    ],
+                  ),
+                ),
               Expanded(
                 child: NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
@@ -670,10 +713,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      CircleAvatar(
-                        backgroundColor: Theme.of(context).colorScheme.primary,
+                      SizedBox(
+                        width: 48,
+                        height: 48,
                         child: IconButton(
                           onPressed: _sending ? null : _sendMessage,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .primary,
+                            shape: const CircleBorder(),
+                          ),
                           icon: _sending
                               ? const SizedBox(
                                   width: 18,
@@ -766,10 +816,10 @@ class _MessageBubble extends StatelessWidget {
                         borderRadius: BorderRadius.circular(10),
                         child: Image.file(
                           File(localImagePath!),
-                          width: 220,
+                          width: double.infinity,
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => const SizedBox(
-                            width: 220,
+                            width: double.infinity,
                             height: 160,
                             child: Icon(Icons.broken_image_outlined),
                           ),
@@ -785,7 +835,7 @@ class _MessageBubble extends StatelessWidget {
                         }
                         if (!snapshot.hasData) {
                           return const SizedBox(
-                            width: 180,
+                            width: double.infinity,
                             height: 140,
                             child: Center(child: CircularProgressIndicator()),
                           );
@@ -796,18 +846,18 @@ class _MessageBubble extends StatelessWidget {
                             borderRadius: BorderRadius.circular(10),
                             child: CachedNetworkImage(
                               imageUrl: snapshot.data!,
-                              width: 220,
+                              width: double.infinity,
                               fit: BoxFit.cover,
                               memCacheWidth: 440,
                               placeholder: (_, _) => const SizedBox(
-                                width: 220,
+                                width: double.infinity,
                                 height: 160,
                                 child: Center(
                                   child: CircularProgressIndicator(),
                                 ),
                               ),
                               errorWidget: (_, _, _) => const SizedBox(
-                                width: 220,
+                                width: double.infinity,
                                 height: 160,
                                 child: Icon(Icons.broken_image_outlined),
                               ),

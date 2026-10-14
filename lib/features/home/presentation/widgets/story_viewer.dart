@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -35,7 +36,10 @@ class _StoryViewerPageState extends ConsumerState<StoryViewerPage> {
   late List<StoryGroup> _groups;
   late List<Story> _items;
   late int _position;
-  double _progress = 0;
+
+  /// Only the active progress bar listens to this, so the 33ms ticker no longer
+  /// rebuilds the whole page (image, header, buttons) 30 times a second.
+  final ValueNotifier<double> _progress = ValueNotifier<double>(0);
   Timer? _ticker;
   bool _paused = false;
 
@@ -89,11 +93,11 @@ class _StoryViewerPageState extends ConsumerState<StoryViewerPage> {
     if (_paused) return;
     _ticker = Timer.periodic(_tick, (timer) {
       final elapsed = _tick.inMilliseconds / _storyDuration.inMilliseconds;
-      _progress += elapsed;
-      if (_progress >= 1) {
+      final next = _progress.value + elapsed;
+      if (next >= 1) {
         _advance();
-      } else if (mounted) {
-        setState(() {});
+      } else {
+        _progress.value = next;
       }
     });
   }
@@ -113,18 +117,18 @@ class _StoryViewerPageState extends ConsumerState<StoryViewerPage> {
       _close();
       return;
     }
+    _progress.value = 0;
     setState(() {
       _position += 1;
-      _progress = 0;
     });
     _startTicker();
   }
 
   void _rewind() {
     if (_position == 0) return;
+    _progress.value = 0;
     setState(() {
       _position -= 1;
-      _progress = 0;
     });
     _startTicker();
   }
@@ -179,11 +183,11 @@ class _StoryViewerPageState extends ConsumerState<StoryViewerPage> {
         rebuilt.add(StoryGroup(authorId: group.authorId, stories: remaining));
       }
     }
+    _progress.value = 0;
     setState(() {
       _groups = rebuilt;
       _rebuild();
       _position = _position.clamp(0, _items.isEmpty ? 0 : _items.length - 1);
-      _progress = 0;
     });
     if (_items.isEmpty) {
       _close();
@@ -193,7 +197,12 @@ class _StoryViewerPageState extends ConsumerState<StoryViewerPage> {
   }
 
   void _handleTap(double dx, double width) {
-    if (dx < width * 0.35) {
+    // In RTL the story order runs right to left, so the rewind strip moves to
+    // the right edge instead of the left one.
+    final distanceFromStart = Directionality.of(context) == TextDirection.rtl
+        ? width - dx
+        : dx;
+    if (distanceFromStart < width * 0.35) {
       _rewind();
     } else {
       _advance();
@@ -203,6 +212,7 @@ class _StoryViewerPageState extends ConsumerState<StoryViewerPage> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _progress.dispose();
     super.dispose();
   }
 
@@ -246,13 +256,11 @@ class _StoryViewerPageState extends ConsumerState<StoryViewerPage> {
                         Expanded(
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: _ProgressBar(
-                              value: index < activeIndex
-                                  ? 1
-                                  : index == activeIndex
-                                  ? _progress
-                                  : 0,
-                            ),
+                            child: index == activeIndex
+                                ? _LiveProgressBar(progress: _progress)
+                                : _ProgressBar(
+                                    value: index < activeIndex ? 1 : 0,
+                                  ),
                           ),
                         ),
                     ],
@@ -324,19 +332,37 @@ class _ProgressBar extends StatelessWidget {
   final double value;
 
   @override
+  Widget build(BuildContext context) => _storyBar(value);
+}
+
+/// The bar of the story that is playing. It listens to the ticker on its own so
+/// that 33ms updates never rebuild the rest of the page.
+class _LiveProgressBar extends StatelessWidget {
+  const _LiveProgressBar({required this.progress});
+
+  final ValueListenable<double> progress;
+
+  @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(2),
-      child: Stack(
-        alignment: AlignmentDirectional.centerStart,
-        children: [
-          Container(height: 3, color: Colors.white24),
-          FractionallySizedBox(
-            widthFactor: value.clamp(0.0, 1.0),
-            child: Container(height: 3, color: Colors.white),
-          ),
-        ],
-      ),
+    return ValueListenableBuilder<double>(
+      valueListenable: progress,
+      builder: (context, value, _) => _storyBar(value),
     );
   }
+}
+
+Widget _storyBar(double value) {
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(2),
+    child: Stack(
+      alignment: AlignmentDirectional.centerStart,
+      children: [
+        Container(height: 3, color: Colors.white24),
+        FractionallySizedBox(
+          widthFactor: value.clamp(0.0, 1.0),
+          child: Container(height: 3, color: Colors.white),
+        ),
+      ],
+    ),
+  );
 }

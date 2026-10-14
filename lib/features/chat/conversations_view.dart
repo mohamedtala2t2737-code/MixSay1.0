@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -88,7 +90,7 @@ class ConversationsListView extends ConsumerWidget {
                         radius: 10,
                         backgroundColor: Theme.of(context).colorScheme.primary,
                         child: Text(
-                          '${item.unreadCount}',
+                          s.number(item.unreadCount),
                           style: const TextStyle(
                             fontSize: 10,
                             color: Colors.white,
@@ -139,30 +141,47 @@ class _NewChatDialog extends ConsumerStatefulWidget {
 }
 
 class _NewChatDialogState extends ConsumerState<_NewChatDialog> {
+  static const _debounceDuration = Duration(milliseconds: 350);
+
   final _controller = TextEditingController();
   Future<List<ChatUserPreview>>? _results;
+  Timer? _debounce;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
+  /// One query per pause in typing, not one per keystroke: every search is a
+  /// billed range read on publicProfiles.
   void _search(String value) {
-    setState(() {
-      _results = value.trim().length < 2
-          ? null
-          : ref.read(chatRepositoryProvider).searchUsers(value);
+    _debounce?.cancel();
+    if (value.trim().length < 2) {
+      setState(() => _results = null);
+      return;
+    }
+    _debounce = Timer(_debounceDuration, () {
+      if (!mounted) return;
+      setState(() {
+        _results = ref.read(chatRepositoryProvider).searchUsers(value);
+      });
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
+    final screenSize = MediaQuery.sizeOf(context);
+    // A fixed 420x280 box overflowed the dialog on narrow or landscape
+    // screens, which clipped the search field and hid results off-screen.
+    final dialogWidth = (screenSize.width - 96).clamp(240.0, 420.0);
+    final resultsHeight = (screenSize.height * 0.45).clamp(96.0, 280.0);
     return AlertDialog(
       title: Text(s.message),
       content: SizedBox(
-        width: 420,
+        width: dialogWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -177,7 +196,7 @@ class _NewChatDialogState extends ConsumerState<_NewChatDialog> {
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: 280,
+              height: resultsHeight,
               child: _results == null
                   ? Center(child: Text(s.searchInitial))
                   : FutureBuilder<List<ChatUserPreview>>(

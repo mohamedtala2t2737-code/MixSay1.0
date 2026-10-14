@@ -63,8 +63,17 @@ class ChatConversationPreview {
   factory ChatConversationPreview.fromFirestore(
     QueryDocumentSnapshot<Map<String, dynamic>> document,
     String userId,
-  ) {
-    final data = document.data();
+  ) => ChatConversationPreview.fromData(
+    id: document.id,
+    data: document.data(),
+    userId: userId,
+  );
+
+  factory ChatConversationPreview.fromData({
+    required String id,
+    required Map<String, dynamic> data,
+    required String userId,
+  }) {
     final members = (data['members'] as List<dynamic>? ?? []).cast<String>();
     final otherUserId = members.firstWhere(
       (member) => member != userId,
@@ -76,7 +85,7 @@ class ChatConversationPreview {
     final unreadCounts = (data['unreadCounts'] as Map<String, dynamic>? ?? {});
 
     return ChatConversationPreview(
-      id: document.id,
+      id: id,
       otherUserId: otherUserId,
       otherUsername: otherUser['username'] as String? ?? '',
       otherFullName: otherUser['fullName'] as String? ?? '',
@@ -217,6 +226,8 @@ class ChatRepository {
        _pendingQueue = pendingQueue ?? PendingQueueService.instance;
 
   static const _messagePageSize = 30;
+  static const _conversationPageSize = 50;
+  static const _statusPageSize = 50;
   static const _profileCacheTtl = Duration(minutes: 10);
 
   final FirebaseAuth _auth;
@@ -270,6 +281,69 @@ class ChatRepository {
     return '${members[0].length}_${members[0]}${members[1]}';
   }
 
+  /// The member that is not [senderId], or null for a malformed document. Both
+  /// this and the rules treat a thread as exactly two people.
+  static String? recipientOf(Iterable<String> members, String senderId) {
+    final recipient = members.where((member) => member != senderId).toList();
+    return recipient.length == 1 ? recipient.single : null;
+  }
+
+  /// Read receipts only move forward, mirroring the `messages/{messageId}`
+  /// update rule. Keeping the ladder in one place is what stops a retried
+  /// status write from downgrading a message the other side already read.
+  static bool canMoveStatus({required String from, required String to}) =>
+      (from == 'sent' && (to == 'delivered' || to == 'read')) ||
+      (from == 'delivered' && to == 'read');
+
+  /// Merges freshly received messages into what the thread already shows.
+  /// A queued send has id `pending-<clientId>` while the same message after it
+  /// reaches Firestore is keyed by [clientId], so the client id is what pairs
+  /// them; without that the sender would see their own message twice.
+  static List<ChatMessage> mergeMessages(
+    List<ChatMessage> loaded,
+    Iterable<ChatMessage> incoming,
+  ) {
+    final merged = [...loaded];
+    for (final message in incoming) {
+      final index = merged.indexWhere(
+        (item) =>
+            item.id == message.id ||
+            (message.clientId != null && item.clientId == message.clientId),
+      );
+      if (index == -1) {
+        merged.add(message);
+      } else {
+        merged[index] = message;
+      }
+    }
+    merged.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return merged;
+  }
+
+  /// Whether a queue entry may be attempted now: it has to be mine, not
+  /// permanently failed, and not still inside its backoff window.
+  static bool isReadyToSend(
+    Map<String, dynamic> entry, {
+    required String senderId,
+    DateTime? now,
+  }) {
+    if (entry['sender_id'] != senderId || entry['state'] == 'failed') {
+      return false;
+    }
+    final nextAttempt = DateTime.tryParse(
+      entry['next_attempt_at'] as String? ?? '',
+    );
+    return nextAttempt == null || !nextAttempt.isAfter(now ?? DateTime.now());
+  }
+
+  /// Waits 2^attempts seconds, capped, so a device that stays offline does not
+  /// hammer Firestore with every app open.
+  static Duration retryBackoff(int attempts) =>
+      Duration(seconds: min(300, 1 << attempts));
+
+  static int nextAttemptCount(dynamic current) =>
+      (_asInt(current) + 1).clamp(1, 8).toInt();
+
   Future<String> getOrCreateConversation(String otherUserId) async {
     final currentUserId = _me;
     if (otherUserId.isEmpty || otherUserId == currentUserId) {
@@ -313,8 +387,14 @@ class ChatRepository {
     if (currentUserId == null) {
       return Stream.error(StateError('Sign in with Firebase to use chat'));
     }
+    // The server does the ordering: without it every conversation of the user
+    // is downloaded on every change just to be sorted locally, and the list
+    // grows without a bound. Documents with no message yet (lastMessageAt null)
+    // sort last, which is where the old local sort put them.
     return _conversations
         .where('members', arrayContains: currentUserId)
+        .orderBy('lastMessageAt', descending: true)
+        .limit(_conversationPageSize)
         .snapshots()
         .asyncMap((snapshot) async {
           final items = await Future.wait(
@@ -335,11 +415,6 @@ class ChatRepository {
                 return preview;
               }
             }),
-          );
-          items.sort(
-            (a, b) => (b.lastMessageAt ?? DateTime(1970)).compareTo(
-              a.lastMessageAt ?? DateTime(1970),
-            ),
           );
           return items;
         });
@@ -581,15 +656,7 @@ class ChatRepository {
       final sent = <ChatMessage>[];
       for (var index = 0; index < transaction.entries.length; index++) {
         final entry = transaction.entries[index];
-        if (entry['sender_id'] != userId || entry['state'] == 'failed') {
-          continue;
-        }
-        final nextAttempt = DateTime.tryParse(
-          entry['next_attempt_at'] as String? ?? '',
-        );
-        if (nextAttempt != null && nextAttempt.isAfter(DateTime.now())) {
-          continue;
-        }
+        if (!isReadyToSend(entry, senderId: userId)) continue;
         entry['state'] = 'sending';
         entry.remove('next_attempt_at');
         await transaction.save();
@@ -632,14 +699,11 @@ class ChatRepository {
             entry['state'] = 'failed';
             entry.remove('next_attempt_at');
           } else {
-            final attempts = (_asInt(entry['attempts']) + 1)
-                .clamp(1, 8)
-                .toInt();
+            final attempts = nextAttemptCount(entry['attempts']);
             entry['state'] = 'queued';
             entry['attempts'] = attempts;
-            final backoffSeconds = min(300, 1 << attempts);
             entry['next_attempt_at'] = DateTime.now()
-                .add(Duration(seconds: backoffSeconds))
+                .add(retryBackoff(attempts))
                 .toIso8601String();
           }
           await transaction.save();
@@ -658,34 +722,33 @@ class ChatRepository {
     return flushPendingMessages();
   }
 
-  Future<void> deletePendingMessage(String clientId) =>
-      _pendingQueue.delete(clientId: clientId, senderId: _me);
+  /// Forgets a queued or failed message: drops the local queue entry and, in
+  /// case the transaction had already reached Firestore, deletes that document
+  /// too. Only the sender can do this (see firestore.rules), so anything the
+  /// other side already received stays in their copy of the thread.
+  Future<void> deleteMessage({
+    required String conversationId,
+    required String clientId,
+  }) async {
+    await _pendingQueue.delete(clientId: clientId, senderId: _me);
+    await _messages(conversationId).doc(clientId).delete();
+  }
 
   Future<void> markMessagesRead(String conversationId) async {
     final userId = _me;
-    final currentMessages = _messages(conversationId);
-    final messagesWithRecipient = await currentMessages
+    // Every message this app writes carries recipientId (see _insertMessage) and
+    // the rules now require it, so the second "legacy" scan without that filter
+    // was reading up to 100 documents of the other side on every chat open.
+    final messages = await _messages(conversationId)
         .where('recipientId', isEqualTo: userId)
         .where('status', whereIn: const ['sent', 'delivered'])
         .orderBy('createdAt', descending: true)
+        .limit(_statusPageSize)
         .get();
-    final legacyMessages = await currentMessages
-        .where('status', whereIn: const ['sent', 'delivered'])
-        .orderBy('createdAt', descending: true)
-        .limit(100)
-        .get();
-    final documentsById = {
-      for (final document in messagesWithRecipient.docs) document.id: document,
-      for (final document in legacyMessages.docs)
-        if (!document.data().containsKey('recipientId') &&
-            document.data()['senderId'] != userId)
-          document.id: document,
-    };
     await _updateMessageStatuses(
-      documentsById.values.toList(),
+      messages.docs,
       userId: userId,
       targetStatus: 'read',
-      allowedStatuses: const {'sent', 'delivered'},
     );
     await _conversations.doc(conversationId).update({
       'unreadCounts.$userId': 0,
@@ -694,39 +757,28 @@ class ChatRepository {
 
   Future<void> markReceivedMessagesDelivered() async {
     final userId = _me;
+    // Ordered by the newest activity, so the sweep spends its 50 reads on the
+    // conversations that can actually hold unread mail.
     final conversations = await _conversations
         .where('members', arrayContains: userId)
+        .orderBy('lastMessageAt', descending: true)
+        .limit(_conversationPageSize)
         .get();
     for (final conversation in conversations.docs) {
       final unreadCounts =
           conversation.data()['unreadCounts'] as Map<String, dynamic>? ?? {};
       if (_asInt(unreadCounts[userId]) <= 0) continue;
 
-      final conversationMessages = _messages(conversation.id);
-      final messagesWithRecipient = await conversationMessages
+      final undelivered = await _messages(conversation.id)
           .where('recipientId', isEqualTo: userId)
           .where('status', isEqualTo: 'sent')
           .orderBy('createdAt', descending: true)
-          .limit(50)
+          .limit(_statusPageSize)
           .get();
-      final legacyMessages = await conversationMessages
-          .where('status', isEqualTo: 'sent')
-          .orderBy('createdAt', descending: true)
-          .limit(50)
-          .get();
-      final undeliveredById = {
-        for (final document in messagesWithRecipient.docs)
-          document.id: document,
-        for (final document in legacyMessages.docs)
-          if (!document.data().containsKey('recipientId') &&
-              document.data()['senderId'] != userId)
-            document.id: document,
-      };
       await _updateMessageStatuses(
-        undeliveredById.values.take(50).toList(),
+        undelivered.docs,
         userId: userId,
         targetStatus: 'delivered',
-        allowedStatuses: const {'sent'},
       );
     }
   }
@@ -735,7 +787,6 @@ class ChatRepository {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> documents, {
     required String userId,
     required String targetStatus,
-    required Set<String> allowedStatuses,
   }) async {
     for (var start = 0; start < documents.length; start += 450) {
       final chunk = documents.skip(start).take(450).toList();
@@ -752,7 +803,6 @@ class ChatRepository {
             document.reference,
             userId: userId,
             targetStatus: targetStatus,
-            allowedStatuses: allowedStatuses,
           );
         }
       }
@@ -763,14 +813,16 @@ class ChatRepository {
     DocumentReference<Map<String, dynamic>> reference, {
     required String userId,
     required String targetStatus,
-    required Set<String> allowedStatuses,
   }) async {
     await _firestore.runTransaction((transaction) async {
       final snapshot = await transaction.get(reference);
       final data = snapshot.data();
       if (data == null ||
           data['senderId'] == userId ||
-          !allowedStatuses.contains(data['status'])) {
+          !canMoveStatus(
+            from: data['status'] as String? ?? 'sent',
+            to: targetStatus,
+          )) {
         return;
       }
       transaction.update(reference, {'status': targetStatus});
@@ -819,11 +871,8 @@ class ChatRepository {
       if (!conversationSnapshot.exists || !members.contains(senderId)) {
         throw StateError('Conversation not found or access denied');
       }
-      final recipientId = members.firstWhere(
-        (member) => member != senderId,
-        orElse: () => '',
-      );
-      if (recipientId.isEmpty) {
+      final recipientId = recipientOf(members, senderId);
+      if (recipientId == null) {
         throw StateError('Conversation must have two members');
       }
 

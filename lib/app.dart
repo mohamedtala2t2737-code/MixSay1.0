@@ -10,6 +10,7 @@ import 'package:social_chat/core/notifications/chat_notification_service.dart';
 import 'package:social_chat/core/router/app_router.dart';
 import 'package:social_chat/core/theme/app_theme.dart';
 import 'package:social_chat/core/theme/theme_providers.dart';
+import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/feed/presentation/saved_posts_provider.dart';
 import 'package:social_chat/features/splash/presentation/splash_gate.dart';
 
@@ -24,11 +25,10 @@ class _SocialChatAppState extends ConsumerState<SocialChatApp> {
   @override
   void initState() {
     super.initState();
-    unawaited(ref.read(localeControllerProvider.notifier).restore());
-    unawaited(ref.read(themeModeProvider.notifier).restore());
     unawaited(ref.read(savedPostsProvider.notifier).restore());
     unawaited(
       ChatNotificationService.instance.initialize(
+        chatRepository: ref.read(chatRepositoryProvider),
         onOpenConversation: (conversationId) async =>
             appRouter.push('/chat/$conversationId'),
       ),

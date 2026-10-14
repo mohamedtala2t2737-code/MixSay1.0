@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/widgets/app_settings_sheet.dart';
-import 'package:social_chat/features/auth/presentation/auth_providers.dart';
+import 'package:social_chat/features/auth/presentation/sign_out_action.dart';
 import 'package:social_chat/features/chat/conversations_view.dart';
 
 /// Standalone conversation list route, kept for deep links and as the fallback
@@ -23,18 +23,7 @@ class ConversationsScreen extends ConsumerWidget {
           IconButton(
             tooltip: s.logOut,
             icon: const Icon(Icons.logout),
-            onPressed: () async {
-              try {
-                await ref.read(authRepositoryProvider).signOut();
-              } catch (error, stackTrace) {
-                debugPrint('Unable to sign out: $error');
-                debugPrintStack(stackTrace: stackTrace);
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context)
-                  ..hideCurrentSnackBar()
-                  ..showSnackBar(SnackBar(content: Text(s.actionFailed)));
-              }
-            },
+            onPressed: () => confirmAndSignOut(context, ref),
           ),
           IconButton(
             tooltip: s.message,

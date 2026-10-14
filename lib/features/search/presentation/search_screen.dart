@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,20 +20,36 @@ class SearchScreen extends ConsumerStatefulWidget {
 }
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
+  static const _debounceDuration = Duration(milliseconds: 350);
+
   final _controller = TextEditingController();
   Future<List<ChatUserPreview>>? _results;
+  String? _pendingQuery;
+  Timer? _debounce;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   void _search(String value) {
+    _debounce?.cancel();
+    final trimmed = value.trim();
+    if (trimmed.length < 2) {
+      setState(() => _results = null);
+      return;
+    }
+    _pendingQuery = trimmed;
+    _debounce = Timer(_debounceDuration, _runSearch);
+  }
+
+  void _runSearch() {
+    final query = _pendingQuery;
+    if (!mounted || query == null) return;
     setState(() {
-      _results = value.trim().length < 2
-          ? null
-          : ref.read(chatRepositoryProvider).searchUsers(value);
+      _results = ref.read(chatRepositoryProvider).searchUsers(query);
     });
   }
 
@@ -83,7 +101,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 }
                 if (snapshot.hasError) {
                   debugPrint('Unable to search users: ${snapshot.error}');
-                  return ErrorStateView(message: s.loadFailed);
+                  return ErrorStateView(
+                    message: s.loadFailed,
+                    onRetry: _runSearch,
+                  );
                 }
                 final users = snapshot.data ?? const <ChatUserPreview>[];
                 if (users.isEmpty) {

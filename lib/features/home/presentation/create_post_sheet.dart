@@ -57,23 +57,28 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
     String? mediaUrl;
     try {
       final repository = ref.read(feedRepositoryProvider);
+      final postId = repository.newPostId();
       if (image != null) {
         mediaUrl = await repository.uploadPostMedia(
-          postId: repository.newPostId(),
+          postId: postId,
           bytes: image.bytes,
           contentType: image.contentType,
           extension: image.extension,
         );
       }
       await repository.createPost(
+        postId: postId,
         caption: caption,
         mediaUrl: mediaUrl,
         mediaType: mediaUrl == null ? 'none' : 'image',
       );
       ref.invalidate(feedPostsProvider);
       if (!mounted) return;
+      // The messenger belongs to the app, not to this sheet, so grab it before
+      // popping: after the pop this widget's context is defunct.
+      final messenger = ScaffoldMessenger.of(context);
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context)
+      messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(s.postPublished)));
     } catch (error, stackTrace) {
@@ -192,8 +197,10 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                 Expanded(
                   child: Align(
                     alignment: AlignmentDirectional.centerEnd,
-                    child: SizedBox(
-                      width: 150,
+                    child: ConstrainedBox(
+                      // A hard 150 clipped "جارٍ النشر..." at large text
+                      // scales; the button now keeps its floor but can grow.
+                      constraints: const BoxConstraints(minWidth: 150),
                       child: PrimaryButton(
                         label: _busy ? s.publishing : s.publish,
                         loading: _busy,

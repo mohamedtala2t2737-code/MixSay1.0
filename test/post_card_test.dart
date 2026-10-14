@@ -59,8 +59,8 @@ void main() {
     await tester.pumpWidget(_harness(const Locale('ar')));
     await tester.pumpAndSettle();
 
-    expect(find.text('249 إعجاب'), findsOneWidget);
-    expect(find.text('3 تعليق'), findsOneWidget);
+    expect(find.text('٢٤٩ إعجاب'), findsOneWidget);
+    expect(find.text('٣ تعليق'), findsOneWidget);
 
     await tester.tap(find.byTooltip('حفظ'));
     await tester.pumpAndSettle();

@@ -5,6 +5,7 @@ import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
+import 'package:social_chat/features/auth/presentation/sign_out_action.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
 import 'package:social_chat/features/home/presentation/create_post_sheet.dart';
@@ -85,18 +86,7 @@ class ProfileTab extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: OutlinedButton.icon(
-              onPressed: () async {
-                try {
-                  await ref.read(authRepositoryProvider).signOut();
-                } catch (error, stackTrace) {
-                  debugPrint('Unable to sign out: $error');
-                  debugPrintStack(stackTrace: stackTrace);
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(SnackBar(content: Text(s.actionFailed)));
-                }
-              },
+              onPressed: () => confirmAndSignOut(context, ref),
               icon: const Icon(Icons.logout),
               label: Text(s.logOut),
             ),

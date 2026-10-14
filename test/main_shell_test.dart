@@ -162,4 +162,29 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('MixSay'), findsOneWidget);
   });
+
+  testWidgets('every tab still lays out at a large system text scale', (
+    tester,
+  ) async {
+    _usePhoneViewport(tester);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(_harness(const Locale('ar')));
+    await tester.pumpAndSettle();
+
+    // An overflow in any of these tabs throws during the pump, which fails the
+    // test — this is where the previously hard-coded rail and bar heights bit.
+    for (final icon in [
+      Icons.account_circle_outlined,
+      Icons.notifications_none_rounded,
+      Icons.mail_outline_rounded,
+      Icons.home_filled,
+    ]) {
+      await tester.tap(find.byIcon(icon));
+      await tester.pumpAndSettle();
+    }
+
+    expect(tester.takeException(), isNull);
+  });
 }

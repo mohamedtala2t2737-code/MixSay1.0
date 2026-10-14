@@ -30,12 +30,9 @@ class _PostCardState extends ConsumerState<PostCard> {
   Future<void> _toggleLike() async {
     if (_liking) return;
     final s = AppStrings.of(context);
-    final username = ref.read(currentProfileProvider).value?.username ?? '';
     setState(() => _liking = true);
     try {
-      await ref
-          .read(feedRepositoryProvider)
-          .toggleLike(post: widget.post, username: username);
+      await ref.read(feedRepositoryProvider).toggleLike(post: widget.post);
     } catch (error, stackTrace) {
       debugPrint('Unable to update the like: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -119,7 +116,9 @@ class _PostCardState extends ConsumerState<PostCard> {
             children: [
               ListTile(
                 leading: Icon(
-                  saved ? Icons.bookmark_remove : Icons.bookmark_add_outlined,
+                  saved
+                      ? Icons.bookmark_remove_rounded
+                      : Icons.bookmark_add_rounded,
                 ),
                 title: Text(saved ? s.unsavePost : s.savePost),
                 onTap: () => closeAndRun(
@@ -137,7 +136,7 @@ class _PostCardState extends ConsumerState<PostCard> {
               if (isMine)
                 ListTile(
                   leading: Icon(
-                    Icons.delete_outline,
+                    Icons.delete_rounded,
                     color: Theme.of(context).colorScheme.error,
                   ),
                   title: Text(s.deletePost),
@@ -195,7 +194,7 @@ class _PostCardState extends ConsumerState<PostCard> {
               ),
               if (created != null)
                 Padding(
-                  padding: const EdgeInsets.only(right: 4),
+                  padding: const EdgeInsetsDirectional.only(end: 4),
                   child: Text(
                     timeAgo(created, isArabic: s.isArabic),
                     style: theme.textTheme.labelSmall?.copyWith(
@@ -206,7 +205,7 @@ class _PostCardState extends ConsumerState<PostCard> {
               IconButton(
                 tooltip: s.postOptions,
                 onPressed: _openOptions,
-                icon: const Icon(Icons.more_vert),
+                icon: const Icon(Icons.more_vert_rounded),
               ),
             ],
           ),
@@ -229,7 +228,7 @@ class _PostCardState extends ConsumerState<PostCard> {
               IconButton(
                 tooltip: s.comments,
                 onPressed: () => showPostCommentsSheet(context, post),
-                icon: const Icon(Icons.mode_comment_outlined),
+                icon: const Icon(Icons.mode_comment_rounded),
               ),
               IconButton(
                 tooltip: s.share,

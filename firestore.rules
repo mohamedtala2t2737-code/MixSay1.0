@@ -195,6 +195,10 @@ service cloud.firestore {
       allow get: if verifiedUser()
         && (resource == null || request.auth.uid in resource.data.members);
       allow list: if verifiedUser()
+        // ChatRepository.watchConversations orders by lastMessageAt and caps the
+        // window at 50, so a member cannot stream their whole conversation list
+        // or the list of an account they were invited into.
+        && request.query.limit <= 50
         && request.auth.uid in resource.data.members;
 
       allow create: if verifiedUser()
@@ -287,7 +291,11 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if isConversationMember(conversationId);
+        allow get: if isConversationMember(conversationId);
+        // watchRecentMessages uses limitToLast(100) and getMessages limit(30);
+        // the cap stops a member from dumping a whole thread in one request.
+        allow list: if isConversationMember(conversationId)
+          && request.query.limit <= 100;
 
         allow create: if isConversationMember(conversationId)
           && request.resource.data.senderId == request.auth.uid
@@ -299,10 +307,12 @@ service cloud.firestore {
             'content',
             'mediaUrl',
             'createdAt',
-            'status'
+            'status',
+            // Required, not optional: the cheap read-receipt and delivered
+            // queries filter on it, so a message without it can never be
+            // marked read.
+            'recipientId'
           ])
-          // 'recipientId' is optional: needed only if the app adds the
-          // cheaper "unread messages" queries.
           && request.resource.data.keys().hasOnly([
             'senderId',
             'clientId',
@@ -312,15 +322,10 @@ service cloud.firestore {
             'status',
             'recipientId'
           ])
-          && (
-            !('recipientId' in request.resource.data)
-            || (
-              request.resource.data.recipientId != request.auth.uid
-              && request.resource.data.recipientId in get(
-                /databases/$(database)/documents/conversations/$(conversationId)
-              ).data.members
-            )
-          )
+          && request.resource.data.recipientId != request.auth.uid
+          && request.resource.data.recipientId in get(
+            /databases/$(database)/documents/conversations/$(conversationId)
+          ).data.members
           && request.resource.data.clientId == messageId
           && request.resource.data.createdAt is timestamp
           && request.resource.data.status == 'sent'
@@ -348,7 +353,12 @@ service cloud.firestore {
               && request.resource.data.status == 'read'
             )
           );
-        allow delete: if false;
+        // Only the sender may remove a message, never the recipient. The app
+        // offers this for queued/failed sends: without it, a send that quietly
+        // reached Firestore while the local queue still said "failed" could
+        // never be got rid of and would reappear on the next sync.
+        allow delete: if isConversationMember(conversationId)
+          && resource.data.senderId == request.auth.uid;
       }
     }
 

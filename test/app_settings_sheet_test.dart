@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/l10n/locale_providers.dart';
+import 'package:social_chat/core/prefs/startup_preferences.dart';
 import 'package:social_chat/core/theme/theme_providers.dart';
 import 'package:social_chat/core/widgets/app_settings_sheet.dart';
 
@@ -47,9 +48,7 @@ void main() {
     expect(AppStrings.of(captured).isArabic, isTrue);
   });
 
-  testWidgets('the settings sheet switches language and theme', (
-    tester,
-  ) async {
+  testWidgets('the settings sheet switches language and theme', (tester) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
@@ -89,28 +88,78 @@ void main() {
     expect(prefs.getString('app_theme_mode'), 'dark');
   });
 
-  test('restore() re-applies the stored language and theme', () async {
-    SharedPreferences.setMockInitialValues({
-      'app_locale': 'ar',
-      'app_theme_mode': 'light',
-    });
+  testWidgets('the settings sheet scrolls instead of clipping at a big scale', (
+    tester,
+  ) async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
+    await tester.binding.setSurfaceSize(const Size(360, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-    await container.read(localeControllerProvider.notifier).restore();
-    await container.read(themeModeProvider.notifier).restore();
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          localizationsDelegates: const [
+            AppStrings.delegate,
+            ...GlobalMaterialLocalizations.delegates,
+          ],
+          supportedLocales: AppStrings.supportedLocales,
+          home: Scaffold(
+            appBar: AppBar(actions: const [AppSettingsIconButton()]),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-    expect(container.read(localeControllerProvider), const Locale('ar'));
-    expect(container.read(themeModeProvider), ThemeMode.light);
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+
+    // The theme row sits under the fold once the sheet is short and the text
+    // is large; before the sheet scrolled it was simply cut off.
+    expect(find.text('Dark'), findsOneWidget);
+    await tester.ensureVisible(find.text('Dark'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.text('Dark')).bottom, lessThan(320));
+    expect(tester.takeException(), isNull);
   });
+
+  test(
+    'the stored language and theme are ready for the very first frame',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'app_locale': 'ar',
+        'app_theme_mode': 'light',
+      });
+      final container = ProviderContainer(
+        overrides: [
+          startupPreferencesProvider.overrideWithValue(
+            await StartupPreferences.read(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      expect(container.read(localeControllerProvider), const Locale('ar'));
+      expect(container.read(themeModeProvider), ThemeMode.light);
+    },
+  );
 
   test('an unknown stored value falls back to the system theme', () async {
     SharedPreferences.setMockInitialValues({'app_theme_mode': 'neon'});
-    final container = ProviderContainer();
+    final container = ProviderContainer(
+      overrides: [
+        startupPreferencesProvider.overrideWithValue(
+          await StartupPreferences.read(),
+        ),
+      ],
+    );
     addTearDown(container.dispose);
 
-    await container.read(themeModeProvider.notifier).restore();
-
     expect(container.read(themeModeProvider), ThemeMode.system);
+    expect(container.read(localeControllerProvider), isNull);
   });
 }

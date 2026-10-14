@@ -5,7 +5,6 @@ import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/utils/time_ago.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
-import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
 
@@ -45,16 +44,11 @@ class _PostCommentsSheetState extends ConsumerState<_PostCommentsSheet> {
     final text = _controller.text.trim();
     if (text.isEmpty || _sending) return;
     final s = AppStrings.of(context);
-    final profile = ref.read(currentProfileProvider).value;
     setState(() => _sending = true);
     try {
       await ref
           .read(feedRepositoryProvider)
-          .addComment(
-            postId: widget.post.id,
-            username: profile?.username ?? '',
-            content: text,
-          );
+          .addComment(postId: widget.post.id, content: text);
       if (!mounted) return;
       _controller.clear();
       setState(() => _sending = false);
@@ -109,7 +103,11 @@ class _PostCommentsSheetState extends ConsumerState<_PostCommentsSheet> {
               error: (error, stackTrace) {
                 debugPrint('Unable to load comments: $error');
                 debugPrintStack(stackTrace: stackTrace);
-                return ErrorStateView(message: s.loadFailed);
+                return ErrorStateView(
+                  message: s.loadFailed,
+                  onRetry: () =>
+                      ref.invalidate(feedCommentsProvider(widget.post.id)),
+                );
               },
               data: (items) {
                 if (items.isEmpty) {

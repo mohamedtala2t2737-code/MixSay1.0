@@ -26,10 +26,12 @@ class _StoriesBarState extends ConsumerState<StoriesBar> {
   Future<void> _addStory(ImageSource source) async {
     if (_uploading) return;
     final s = AppStrings.of(context);
-    final picked = await pickAndCompressImage(source: source);
-    if (picked == null || !mounted) return;
+    // Set before the picker opens: while it is on screen a second tap would
+    // otherwise launch another sheet on top of the first.
     setState(() => _uploading = true);
     try {
+      final picked = await pickAndCompressImage(source: source);
+      if (picked == null) return;
       await ref
           .read(storyRepositoryProvider)
           .createStory(
@@ -70,13 +72,59 @@ class _StoriesBarState extends ConsumerState<StoriesBar> {
     final profile = ref.watch(currentProfileProvider).value;
     final groupsAsync = ref.watch(activeStoriesProvider);
     final groups = groupsAsync.value ?? const <StoryGroup>[];
+    // The ring plus the author name under it; the name has to keep growing
+    // with the system text scale instead of being clipped by a fixed rail.
+    final railHeight = MediaQuery.textScalerOf(context).scale(96);
+
+    if (groupsAsync.hasError) {
+      // Without this the rail used to render as an empty row of nothing at all
+      // whenever the read failed, which looked like "nobody posted".
+      return SizedBox(
+        height: railHeight,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    s.loadFailed,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => ref.invalidate(activeStoriesProvider),
+                  child: Text(s.retry),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (groupsAsync.isLoading) {
+      return SizedBox(
+        height: railHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            children: [
+              _StorySkeletonTile(),
+              _StorySkeletonTile(),
+              _StorySkeletonTile(),
+            ],
+          ),
+        ),
+      );
+    }
 
     final mine = groups.where((group) => group.authorId == userId).toList();
     final others = groups.where((group) => group.authorId != userId).toList();
     final ordered = <StoryGroup>[...mine, ...others];
 
     return SizedBox(
-      height: 96,
+      height: railHeight,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -110,6 +158,40 @@ class _StoriesBarState extends ConsumerState<StoriesBar> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Placeholder circles shown while the first story snapshot is still in
+/// flight, so the rail does not look like an empty, featureless strip.
+class _StorySkeletonTile extends StatelessWidget {
+  const _StorySkeletonTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      width: 78,
+      child: Column(
+        children: [
+          Container(
+            width: 66,
+            height: 66,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: theme.colorScheme.surfaceContainerHighest,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            height: 8,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ],
       ),
     );
   }

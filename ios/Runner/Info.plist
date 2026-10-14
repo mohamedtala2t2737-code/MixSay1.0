@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>MixSay uses the camera to take a photo you can send in a chat, post or story.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>MixSay reads the photos you pick so you can send them in a chat, post or story.</string>
 </dict>
 </plist>
