@@ -165,7 +165,7 @@ void main() {
     // Start at the bottom, where the submit button lives, so a rejected submit
     // has to move the viewport back up to the name field on its own.
     double pageOffset() =>
-        Scrollable.of(tester.element(find.text('Create account')))!
+        Scrollable.of(tester.element(find.text('Create account')))
             .position
             .pixels;
 
