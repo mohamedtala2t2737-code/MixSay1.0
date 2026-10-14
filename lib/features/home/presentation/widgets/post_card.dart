@@ -32,16 +32,47 @@ class PostCard extends ConsumerStatefulWidget {
 class _PostCardState extends ConsumerState<PostCard> {
   bool _liking = false;
 
+  /// The like the card paints while the write is still in flight, or null when
+  /// the card has no opinion the feed does not already show. A failed write
+  /// clears it, which is what rolls the heart and the number back.
+  bool? _guessed;
+
+  bool get _liked => _guessed ?? widget.post.isLiked;
+
+  /// The stored number, moved by the one the tap caused before Firestore has
+  /// reported it back.
+  int get _likesShown {
+    final shown =
+        widget.post.likesCount +
+        (_liked == widget.post.isLiked ? 0 : (_liked ? 1 : -1));
+    return shown < 0 ? 0 : shown;
+  }
+
+  @override
+  void didUpdateWidget(PostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A local guess is only needed until the feed catches up with it. This runs
+    // inside the rebuild that delivered the new post, so no setState is needed.
+    if (_guessed != null && _guessed == widget.post.isLiked) _guessed = null;
+  }
+
   Future<void> _toggleLike() async {
     if (_liking) return;
     final s = AppStrings.of(context);
-    setState(() => _liking = true);
+    final stored = widget.post.isLiked;
+    // Paint the result before the transaction answers; the heart must follow
+    // the finger, not the network.
+    setState(() {
+      _liking = true;
+      _guessed = !stored;
+    });
     try {
       await ref.read(feedRepositoryProvider).toggleLike(post: widget.post);
     } catch (error, stackTrace) {
       debugPrint('Unable to update the like: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
+        setState(() => _guessed = null);
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(content: Text(s.actionFailed)));
@@ -54,7 +85,7 @@ class _PostCardState extends ConsumerState<PostCard> {
   /// Double-tap likes and never unlikes, so a second accidental burst cannot
   /// take away a like the user meant to give.
   void _doubleTapLike() {
-    if (widget.post.isLiked || _liking) return;
+    if (_liked || _liking) return;
     _toggleLike();
   }
 
@@ -256,13 +287,13 @@ class _PostCardState extends ConsumerState<PostCard> {
           child: Row(
             children: [
               IconButton(
-                tooltip: post.isLiked ? s.unlike : s.like,
+                tooltip: _liked ? s.unlike : s.like,
                 onPressed: _toggleLike,
                 icon: Icon(
-                  post.isLiked
+                  _liked
                       ? Icons.favorite_rounded
                       : Icons.favorite_border_rounded,
-                  color: post.isLiked ? AppColors.brandPink : null,
+                  color: _liked ? AppColors.brandPink : null,
                 ),
               ),
               IconButton(
@@ -298,15 +329,31 @@ class _PostCardState extends ConsumerState<PostCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (post.likesCount > 0)
-                Text(
-                  s.likesCount(post.likesCount),
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
+              // Both counters stay on the card whatever their value: a post
+              // that reads as silent is still a post that exists.
+              Text(
+                s.likesCount(_likesShown),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
               if (post.commentsCount > 0)
+                // The label carries the number, so the counter and the link to
+                // the thread are one line.
                 TextButton(
                   onPressed: () => showPostCommentsSheet(context, post),
-                  child: Text(s.commentsCount(post.commentsCount)),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(s.viewAllComments(post.commentsCount)),
+                )
+              else
+                Text(
+                  s.noComments,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
             ],
           ),

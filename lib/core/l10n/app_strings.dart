@@ -311,6 +311,12 @@ class AppStrings {
       isArabic ? '${number(count)} إعجاب' : '$count likes';
   String commentsCount(int count) =>
       isArabic ? '${number(count)} تعليق' : '$count comments';
+
+  /// The card's link to the thread, with the number inside it so the counter
+  /// and the link are one line instead of two.
+  String viewAllComments(int count) => isArabic
+      ? 'عرض كل التعليقات (${number(count)})'
+      : 'View all $count comments';
   String get writeComment => isArabic ? 'اكتب تعليقًا…' : 'Add a comment…';
   String get seeMore => isArabic ? 'اقرأ المزيد' : 'See more';
   String get seeLess => isArabic ? 'عرض أقل' : 'See less';

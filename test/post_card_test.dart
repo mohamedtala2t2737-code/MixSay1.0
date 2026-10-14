@@ -66,6 +66,21 @@ FeedPost _withSlides(List<String> urls, {bool isLiked = false}) => FeedPost(
   mediaType: 'image',
 );
 
+/// A post nobody has reacted to yet: the card still has to show both counters.
+const _quietPost = FeedPost(
+  id: 'post-quiet',
+  authorId: 'author-1',
+  username: 'layla.hassan',
+  fullName: 'Layla Hassan',
+  caption: 'Slow moments in Cairo',
+  likesCount: 0,
+  commentsCount: 0,
+  createdAt: null,
+  artworkVariant: 0,
+  isLiked: false,
+  mediaType: 'none',
+);
+
 FeedPost _withCaption(String caption) => FeedPost(
   id: 'post-long',
   authorId: 'author-1',
@@ -176,12 +191,26 @@ void _usePhone(WidgetTester tester) {
 /// Stands in for the like write so the double-tap path can be observed without
 /// Firebase: it records the posts it was asked to like and can fail on request.
 class _FakeFeedRepository implements FeedRepository {
+  _FakeFeedRepository({this.likeError, this.holdLike = false});
+
+  /// Thrown by `toggleLike` after [likeGate] completes, which is how a test
+  /// watches the card while the write is still in flight.
+  final Object? likeError;
+  final bool holdLike;
+
   final List<String> liked = <String>[];
+  final Completer<void> likeGate = Completer<void>();
 
   @override
   Future<void> toggleLike({required FeedPost post}) async {
     liked.add(post.id);
+    if (holdLike || likeError != null) await likeGate.future;
+    if (likeError != null) throw likeError!;
   }
+
+  @override
+  Stream<List<FeedComment>> watchComments(String postId) =>
+      Stream.value(const <FeedComment>[]);
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -227,7 +256,7 @@ void main() {
     expect(find.text('layla.hassan'), findsOneWidget);
     expect(find.text('Slow moments in Cairo'), findsOneWidget);
     expect(find.text('249 likes'), findsOneWidget);
-    expect(find.text('3 comments'), findsOneWidget);
+    expect(find.text('View all 3 comments'), findsOneWidget);
     for (final tooltip in ['Like', 'Comments', 'Share', 'Save']) {
       expect(find.byTooltip(tooltip), findsWidgets);
     }
@@ -240,7 +269,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('٢٤٩ إعجاب'), findsOneWidget);
-    expect(find.text('٣ تعليق'), findsOneWidget);
+    expect(find.text('عرض كل التعليقات (٣)'), findsOneWidget);
 
     await tester.tap(find.byTooltip('حفظ'));
     await tester.pumpAndSettle();
@@ -447,11 +476,15 @@ void main() {
     await tester.pump();
 
     expect(feed.liked, <String>['post-carousel']);
-    expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
+    // The burst heart, plus the action row that already reads as liked because
+    // the like is painted before the write answers.
+    expect(find.byIcon(Icons.favorite_rounded), findsNWidgets(2));
+    expect(find.byTooltip('Unlike'), findsOneWidget);
+    expect(find.text('250 likes'), findsOneWidget);
 
     // The burst is a one-shot animation, not a permanent badge.
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.favorite_rounded), findsNothing);
+    expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
   });
 
   testWidgets('double-tapping a post that is already liked changes nothing', (
@@ -603,6 +636,70 @@ void main() {
 
     expect(find.text('Delete post'), findsOneWidget);
     expect(find.text('Report post'), findsOneWidget);
+  });
+
+  testWidgets('a like paints before the server answers', (tester) async {
+    final feed = _FakeFeedRepository(holdLike: true);
+    await tester.pumpWidget(_harness(const Locale('en'), feed: feed));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Like'));
+    await tester.pump();
+
+    // The write is still open: the heart and the number moved anyway.
+    expect(feed.liked, <String>['post-1']);
+    expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
+    expect(find.text('250 likes'), findsOneWidget);
+
+    feed.likeGate.complete();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Unlike'), findsOneWidget);
+    expect(find.text('250 likes'), findsOneWidget);
+  });
+
+  testWidgets('a like the server refuses goes back', (tester) async {
+    final feed = _FakeFeedRepository(
+      likeError: Exception('firestore/permission-denied'),
+    );
+    await tester.pumpWidget(_harness(const Locale('en'), feed: feed));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Like'));
+    await tester.pump();
+    expect(find.text('250 likes'), findsOneWidget);
+
+    feed.likeGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.favorite_border_rounded), findsOneWidget);
+    expect(find.text('249 likes'), findsOneWidget);
+    expect(find.textContaining('Could not complete'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an untouched post still shows both counters', (tester) async {
+    await tester.pumpWidget(_harness(const Locale('en'), post: _quietPost));
+    await tester.pumpAndSettle();
+
+    expect(find.text('0 likes'), findsOneWidget);
+    expect(find.text('No comments yet'), findsOneWidget);
+  });
+
+  testWidgets('view all comments opens the thread', (tester) async {
+    await tester.pumpWidget(
+      _harness(
+        const Locale('en'),
+        asUser: 'user-me',
+        feed: _FakeFeedRepository(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('View all 3 comments'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('Add a comment…'), findsOneWidget);
   });
 
   test('saved posts restore from preferences', () async {
