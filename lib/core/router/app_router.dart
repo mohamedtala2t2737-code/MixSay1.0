@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/features/auth/presentation/screens/email_confirmation_screen.dart';
 import 'package:social_chat/features/auth/presentation/screens/login_screen.dart';
 import 'package:social_chat/features/auth/presentation/screens/sign_up_screen.dart';
@@ -51,8 +53,18 @@ final appRouter = GoRouter(
         state.matchedLocation.startsWith('/chat/') ||
         state.matchedLocation == '/conversations' ||
         state.matchedLocation == '/search';
-    return isChatRoute ? null : '/home';
+    return isChatRoute
+        ? null
+        : state.matchedLocation == '/home'
+        ? null
+        : '/home';
   },
+  errorBuilder: (context, state) => Scaffold(
+    body: ErrorStateView(
+      message: AppStrings.of(context).loadFailed,
+      onRetry: () => GoRouter.of(context).go('/home'),
+    ),
+  ),
   routes: [
     GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
     GoRoute(path: '/signup', builder: (context, state) => const SignUpScreen()),
