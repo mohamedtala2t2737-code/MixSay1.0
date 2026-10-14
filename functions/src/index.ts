@@ -25,6 +25,8 @@ const messagePreview = (content: unknown, mediaUrl: unknown): string => {
 type NotificationKind = "like" | "comment" | "message";
 
 interface InboxEntry {
+  /** Deterministic id so a retried function run overwrites instead of duplicates. */
+  inboxId: string;
   recipientId: string;
   actorId: string;
   actorName: string;
@@ -55,7 +57,7 @@ async function deliverToInbox(entry: InboxEntry): Promise<void> {
   }
 
   try {
-    await firestore.collection("notifications").add(document);
+    await firestore.collection("notifications").doc(entry.inboxId).set(document);
   } catch (error) {
     logger.error("Unable to store a notification document", {
       recipientId: entry.recipientId,
@@ -204,6 +206,7 @@ export const sendChatMessageNotification = onDocumentCreated(
 
     for (const recipientId of recipientIds) {
       await deliverToInbox({
+        inboxId: `message_${messageId}_${recipientId}`,
         recipientId,
         actorId: senderId,
         actorName: senderName,
@@ -226,6 +229,7 @@ export const sendPostLikeNotification = onDocumentCreated(
     if (authorId === null || authorId === likerId) return;
 
     await deliverToInbox({
+      inboxId: `like_${postId}_${likerId}`,
       recipientId: authorId,
       actorId: likerId,
       actorName: await displayNameOf(likerId),
@@ -288,6 +292,7 @@ export const sendPostCommentNotification = onDocumentCreated(
       : "commented on your post";
 
     await deliverToInbox({
+      inboxId: `comment_${commentId}`,
       recipientId: postAuthorIdValue,
       actorId: authorId,
       actorName: await displayNameOf(authorId),
