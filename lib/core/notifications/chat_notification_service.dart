@@ -31,17 +31,43 @@ class ChatNotificationService {
 
   static final instance = ChatNotificationService._();
 
-  static const _channel = AndroidNotificationChannel(
+  static const _chatChannel = AndroidNotificationChannel(
     'chat_messages',
     'Chat messages',
     description: 'Notifications for new chat messages',
     importance: Importance.max,
+  );
+  static const _postChannel = AndroidNotificationChannel(
+    'post_interactions',
+    'Post activity',
+    description: 'Notifications for likes and comments on your posts',
+    importance: Importance.high,
+  );
+  static const _chatDetails = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'chat_messages',
+      'Chat messages',
+      channelDescription: 'Notifications for new chat messages',
+      importance: Importance.max,
+      priority: Priority.high,
+    ),
+  );
+  static const _postDetails = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'post_interactions',
+      'Post activity',
+      channelDescription: 'Notifications for likes and comments on your posts',
+      importance: Importance.high,
+      priority: Priority.high,
+    ),
   );
   static const _pendingConversationKey = 'pending_notification_conversation';
 
   final _messaging = FirebaseMessaging.instance;
   final _localNotifications = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+  String? _registeredUserId;
+  String? _registeredTokenDocumentId;
   String? _pendingConversationId;
   Future<void> Function(String conversationId)? _onOpenConversation;
   AppLifecycleListener? _lifecycleListener;
@@ -85,13 +111,15 @@ class ChatNotificationService {
       _logFailure('initialize local notifications', error, stackTrace);
     }
     try {
-      await _localNotifications
+      final android = _localNotifications
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
-          >()
-          ?.createNotificationChannel(_channel);
+          >();
+      for (final channel in [_chatChannel, _postChannel]) {
+        await android?.createNotificationChannel(channel);
+      }
     } catch (error, stackTrace) {
-      _logFailure('create the chat notification channel', error, stackTrace);
+      _logFailure('create the notification channels', error, stackTrace);
     }
 
     _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(
@@ -187,61 +215,99 @@ class ChatNotificationService {
     _connectivitySubscription = null;
   }
 
+  /// Removes this device's token before signing out: the Firestore rules only
+  /// let an authenticated owner delete their own token document, so waiting for
+  /// the auth-state listener would arrive too late.
+  Future<void> unregisterForPush() => _unregisterDevice();
+
+  static String _tokenDocumentId(String token) =>
+      base64Url.encode(utf8.encode(token)).replaceAll('=', '');
+
   Future<void> _registerCurrentDevice(User? user) async {
-    if (user == null) return;
+    if (user == null) {
+      await _unregisterDevice();
+      return;
+    }
     try {
       final token = await _messaging.getToken();
       if (token == null || token.isEmpty) return;
+      final documentId = _tokenDocumentId(token);
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('deviceTokens')
-          .doc(base64Url.encode(utf8.encode(token)).replaceAll('=', ''))
+          .doc(documentId)
           .set({
             'token': token,
             'platform': 'android',
             'updatedAt': FieldValue.serverTimestamp(),
           });
+      final previousUserId = _registeredUserId;
+      final previousDocumentId = _registeredTokenDocumentId;
+      _registeredUserId = user.uid;
+      _registeredTokenDocumentId = documentId;
+      // A refreshed token or another account on this device would otherwise
+      // leave a live registration behind, and Cloud Functions would keep
+      // pushing this device to the old inbox.
+      if (previousUserId != null &&
+          previousDocumentId != null &&
+          (previousUserId != user.uid || previousDocumentId != documentId)) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(previousUserId)
+            .collection('deviceTokens')
+            .doc(previousDocumentId)
+            .delete();
+      }
     } catch (error, stackTrace) {
-      debugPrint(
-        'Unable to register this device for chat notifications: $error',
-      );
+      debugPrint('Unable to register this device for notifications: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _unregisterDevice() async {
+    final userId = _registeredUserId ?? FirebaseAuth.instance.currentUser?.uid;
+    var documentId = _registeredTokenDocumentId;
+    _registeredUserId = null;
+    _registeredTokenDocumentId = null;
+    if (userId == null) return;
+    try {
+      // A session that never registered (offline start, failed token) still has
+      // a document from the previous session to remove.
+      documentId ??= _tokenDocumentId(await _messaging.getToken() ?? '');
+      if (documentId.isEmpty) return;
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('deviceTokens')
+          .doc(documentId)
+          .delete();
+    } catch (error, stackTrace) {
+      debugPrint('Unable to unregister this device: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
 
   Future<void> _showForegroundMessage(RemoteMessage message) async {
     unawaited(_markReceivedMessagesDelivered());
-    final messageId = message.data['message_id']?.toString();
     final conversationId = message.data['conversation_id']?.toString();
-    if (messageId != null &&
-        messageId.isNotEmpty &&
-        conversationId != null &&
-        conversationId.isNotEmpty) {
-      unawaited(_markMessageDelivered(conversationId, messageId));
-    }
-    if (conversationId == null ||
-        conversationId.isEmpty ||
-        conversationId == ActiveChatState.conversationId) {
-      return;
+    final isChat = conversationId != null && conversationId.isNotEmpty;
+    if (isChat) {
+      final messageId = message.data['message_id']?.toString();
+      if (messageId != null && messageId.isNotEmpty) {
+        unawaited(_markMessageDelivered(conversationId, messageId));
+      }
+      if (conversationId == ActiveChatState.conversationId) return;
     }
 
     final notification = message.notification;
     try {
       await _localNotifications.show(
         id: message.messageId.hashCode,
-        title: notification?.title ?? 'New message',
+        title: notification?.title ?? 'MixSay',
         body: notification?.body ?? '',
-        notificationDetails: const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'chat_messages',
-            'Chat messages',
-            channelDescription: 'Notifications for new chat messages',
-            importance: Importance.max,
-            priority: Priority.high,
-          ),
-        ),
-        payload: conversationId,
+        notificationDetails: isChat ? _chatDetails : _postDetails,
+        payload: isChat ? conversationId : null,
       );
     } catch (error, stackTrace) {
       _logFailure('show a foreground notification', error, stackTrace);

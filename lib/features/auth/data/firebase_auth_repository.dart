@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:social_chat/core/domain/app_user.dart';
 import 'package:social_chat/core/errors/app_exceptions.dart';
+import 'package:social_chat/core/notifications/chat_notification_service.dart';
 import 'package:social_chat/features/auth/domain/entities/auth_sign_up_outcome.dart';
 import 'package:social_chat/features/auth/domain/repositories/auth_repository.dart';
 import 'package:social_chat/features/auth/domain/username_policy.dart';
@@ -124,7 +125,8 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<bool> reloadEmailVerificationStatus() async {    final user = _auth.currentUser;
+  Future<bool> reloadEmailVerificationStatus() async {
+    final user = _auth.currentUser;
     if (user == null) return false;
     await user.reload();
     final refreshedUser = _auth.currentUser;
@@ -146,7 +148,10 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> signOut() => _auth.signOut();
+  Future<void> signOut() async {
+    await ChatNotificationService.instance.unregisterForPush();
+    await _auth.signOut();
+  }
 
   @override
   Future<AppUser?> get currentProfile async {
