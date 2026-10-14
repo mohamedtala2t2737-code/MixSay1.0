@@ -371,19 +371,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void _insertOrReplaceMessages(List<ChatMessage> messages) {
     if (!mounted) return;
     setState(() {
-      for (final message in messages) {
-        final index = _messages.indexWhere(
-          (item) =>
-              item.id == message.id ||
-              (message.clientId != null && item.clientId == message.clientId),
-        );
-        if (index == -1) {
-          _messages.add(message);
-        } else {
-          _messages[index] = message;
-        }
-      }
-      _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      _messages = ChatRepository.mergeMessages(_messages, messages);
     });
   }
 
