@@ -93,9 +93,13 @@ class StoryRepository {
         .limit(storyPageSize)
         .snapshots()
         .map((snapshot) {
+          final now = DateTime.now();
           final stories = snapshot.docs
               .map(Story.fromFirestore)
               .where((story) => story.mediaUrl.isNotEmpty)
+              // The query cutoff is fixed when the subscription starts, so drop
+              // stories that expired while this stream stayed open.
+              .where((story) => now.isBefore(story.expiresAt))
               .toList();
           final groups = <String, List<Story>>{};
           for (final story in stories.reversed) {
