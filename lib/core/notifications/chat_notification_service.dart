@@ -74,6 +74,10 @@ class ChatNotificationService {
   String? _registeredTokenDocumentId;
   String? _pendingConversationId;
   Future<void> Function(String conversationId)? _onOpenConversation;
+
+  /// Supplied by the app so notification handling shares the one chat
+  /// repository instance the UI uses (see `chatRepositoryProvider`).
+  ChatRepository? _chatRepository;
   AppLifecycleListener? _lifecycleListener;
   StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
   StreamSubscription<RemoteMessage>? _openedMessageSubscription;
@@ -87,9 +91,11 @@ class ChatNotificationService {
 
   Future<void> initialize({
     required Future<void> Function(String conversationId) onOpenConversation,
+    required ChatRepository chatRepository,
   }) async {
     if (_initialized) return;
     _initialized = true;
+    _chatRepository = chatRepository;
     _onOpenConversation = onOpenConversation;
     _lifecycleListener = AppLifecycleListener(
       onResume: () => unawaited(_openPendingConversation()),
@@ -146,7 +152,7 @@ class ChatNotificationService {
         if (user != null) {
           unawaited(_openPendingConversation());
           unawaited(_markReceivedMessagesDelivered());
-          unawaited(ChatRepository().flushPendingMessages());
+          _flushPendingMessages();
         }
       },
       onError: (Object error, StackTrace stackTrace) =>
@@ -162,7 +168,7 @@ class ChatNotificationService {
       (results) {
         if (FirebaseAuth.instance.currentUser != null &&
             results.any((result) => result != ConnectivityResult.none)) {
-          unawaited(ChatRepository().flushPendingMessages());
+          _flushPendingMessages();
         }
       },
       onError: (Object error, StackTrace stackTrace) =>
@@ -206,6 +212,7 @@ class ChatNotificationService {
   Future<void> dispose() async {
     _initialized = false;
     _onOpenConversation = null;
+    _chatRepository = null;
     _pendingConversationId = null;
     _deliveredSweepTimer?.cancel();
     _deliveredSweepTimer = null;
@@ -426,7 +433,15 @@ class ChatNotificationService {
     }
   }
 
+  void _flushPendingMessages() {
+    final repository = _chatRepository;
+    if (repository == null) return;
+    unawaited(repository.flushPendingMessages());
+  }
+
   Future<void> _markReceivedMessagesDelivered() async {
+    final repository = _chatRepository;
+    if (repository == null) return;
     if (FirebaseAuth.instance.currentUser == null) return;
     if (_deliveredSweepRunning) {
       _deliveredSweepRequestedAgain = true;
@@ -447,7 +462,7 @@ class ChatNotificationService {
     }
     _deliveredSweepRunning = true;
     try {
-      await ChatRepository().markReceivedMessagesDelivered();
+      await repository.markReceivedMessagesDelivered();
       _lastDeliveredSweep = DateTime.now();
     } catch (error, stackTrace) {
       debugPrint('Unable to update received message statuses: $error');
