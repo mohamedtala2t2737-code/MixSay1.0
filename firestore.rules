@@ -195,6 +195,10 @@ service cloud.firestore {
       allow get: if verifiedUser()
         && (resource == null || request.auth.uid in resource.data.members);
       allow list: if verifiedUser()
+        // ChatRepository.watchConversations orders by lastMessageAt and caps the
+        // window at 50, so a member cannot stream their whole conversation list
+        // or the list of an account they were invited into.
+        && request.query.limit <= 50
         && request.auth.uid in resource.data.members;
 
       allow create: if verifiedUser()
@@ -299,10 +303,12 @@ service cloud.firestore {
             'content',
             'mediaUrl',
             'createdAt',
-            'status'
+            'status',
+            // Required, not optional: the cheap read-receipt and delivered
+            // queries filter on it, so a message without it can never be
+            // marked read.
+            'recipientId'
           ])
-          // 'recipientId' is optional: needed only if the app adds the
-          // cheaper "unread messages" queries.
           && request.resource.data.keys().hasOnly([
             'senderId',
             'clientId',
@@ -312,15 +318,10 @@ service cloud.firestore {
             'status',
             'recipientId'
           ])
-          && (
-            !('recipientId' in request.resource.data)
-            || (
-              request.resource.data.recipientId != request.auth.uid
-              && request.resource.data.recipientId in get(
-                /databases/$(database)/documents/conversations/$(conversationId)
-              ).data.members
-            )
-          )
+          && request.resource.data.recipientId != request.auth.uid
+          && request.resource.data.recipientId in get(
+            /databases/$(database)/documents/conversations/$(conversationId)
+          ).data.members
           && request.resource.data.clientId == messageId
           && request.resource.data.createdAt is timestamp
           && request.resource.data.status == 'sent'

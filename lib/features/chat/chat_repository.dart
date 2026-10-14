@@ -217,6 +217,8 @@ class ChatRepository {
        _pendingQueue = pendingQueue ?? PendingQueueService.instance;
 
   static const _messagePageSize = 30;
+  static const _conversationPageSize = 50;
+  static const _statusPageSize = 50;
   static const _profileCacheTtl = Duration(minutes: 10);
 
   final FirebaseAuth _auth;
@@ -313,8 +315,14 @@ class ChatRepository {
     if (currentUserId == null) {
       return Stream.error(StateError('Sign in with Firebase to use chat'));
     }
+    // The server does the ordering: without it every conversation of the user
+    // is downloaded on every change just to be sorted locally, and the list
+    // grows without a bound. Documents with no message yet (lastMessageAt null)
+    // sort last, which is where the old local sort put them.
     return _conversations
         .where('members', arrayContains: currentUserId)
+        .orderBy('lastMessageAt', descending: true)
+        .limit(_conversationPageSize)
         .snapshots()
         .asyncMap((snapshot) async {
           final items = await Future.wait(
@@ -335,11 +343,6 @@ class ChatRepository {
                 return preview;
               }
             }),
-          );
-          items.sort(
-            (a, b) => (b.lastMessageAt ?? DateTime(1970)).compareTo(
-              a.lastMessageAt ?? DateTime(1970),
-            ),
           );
           return items;
         });
@@ -663,27 +666,17 @@ class ChatRepository {
 
   Future<void> markMessagesRead(String conversationId) async {
     final userId = _me;
-    final currentMessages = _messages(conversationId);
-    final messagesWithRecipient = await currentMessages
+    // Every message this app writes carries recipientId (see _insertMessage) and
+    // the rules now require it, so the second "legacy" scan without that filter
+    // was reading up to 100 documents of the other side on every chat open.
+    final messages = await _messages(conversationId)
         .where('recipientId', isEqualTo: userId)
         .where('status', whereIn: const ['sent', 'delivered'])
         .orderBy('createdAt', descending: true)
-        .limit(100)
+        .limit(_statusPageSize)
         .get();
-    final legacyMessages = await currentMessages
-        .where('status', whereIn: const ['sent', 'delivered'])
-        .orderBy('createdAt', descending: true)
-        .limit(100)
-        .get();
-    final documentsById = {
-      for (final document in messagesWithRecipient.docs) document.id: document,
-      for (final document in legacyMessages.docs)
-        if (!document.data().containsKey('recipientId') &&
-            document.data()['senderId'] != userId)
-          document.id: document,
-    };
     await _updateMessageStatuses(
-      documentsById.values.toList(),
+      messages.docs,
       userId: userId,
       targetStatus: 'read',
       allowedStatuses: const {'sent', 'delivered'},
@@ -695,37 +688,26 @@ class ChatRepository {
 
   Future<void> markReceivedMessagesDelivered() async {
     final userId = _me;
+    // Ordered by the newest activity, so the sweep spends its 50 reads on the
+    // conversations that can actually hold unread mail.
     final conversations = await _conversations
         .where('members', arrayContains: userId)
-        .limit(100)
+        .orderBy('lastMessageAt', descending: true)
+        .limit(_conversationPageSize)
         .get();
     for (final conversation in conversations.docs) {
       final unreadCounts =
           conversation.data()['unreadCounts'] as Map<String, dynamic>? ?? {};
       if (_asInt(unreadCounts[userId]) <= 0) continue;
 
-      final conversationMessages = _messages(conversation.id);
-      final messagesWithRecipient = await conversationMessages
+      final undelivered = await _messages(conversation.id)
           .where('recipientId', isEqualTo: userId)
           .where('status', isEqualTo: 'sent')
           .orderBy('createdAt', descending: true)
-          .limit(50)
+          .limit(_statusPageSize)
           .get();
-      final legacyMessages = await conversationMessages
-          .where('status', isEqualTo: 'sent')
-          .orderBy('createdAt', descending: true)
-          .limit(50)
-          .get();
-      final undeliveredById = {
-        for (final document in messagesWithRecipient.docs)
-          document.id: document,
-        for (final document in legacyMessages.docs)
-          if (!document.data().containsKey('recipientId') &&
-              document.data()['senderId'] != userId)
-            document.id: document,
-      };
       await _updateMessageStatuses(
-        undeliveredById.values.take(50).toList(),
+        undelivered.docs,
         userId: userId,
         targetStatus: 'delivered',
         allowedStatuses: const {'sent'},

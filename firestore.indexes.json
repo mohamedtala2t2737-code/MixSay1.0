@@ -47,15 +47,15 @@
       ]
     },
     {
-      "collectionGroup": "messages",
+      "collectionGroup": "conversations",
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "members",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
+          "fieldPath": "lastMessageAt",
           "order": "DESCENDING"
         }
       ]
