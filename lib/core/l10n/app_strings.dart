@@ -209,6 +209,9 @@ class AppStrings {
       : 'Could not check email verification status.';
 
   String get logOut => isArabic ? 'تسجيل الخروج' : 'Log out';
+  String get logOutConfirm => isArabic
+      ? 'هتسجل الخروج من حسابك على الجهاز ده. هل أنت متأكد؟'
+      : 'You will be signed out of this device. Are you sure?';
   String get messages => isArabic ? 'الرسائل' : 'Messages';
   String get message => isArabic ? 'رسالة' : 'Message';
   String get typeMessage => isArabic ? 'اكتب رسالة…' : 'Type a message…';
