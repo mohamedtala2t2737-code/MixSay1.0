@@ -115,34 +115,57 @@ class FeedRepository {
   CollectionReference<Map<String, dynamic>> get _posts =>
       _firestore.collection('posts');
 
+  /// postId -> whether the current user liked it. The like document id is the
+  /// liker's uid, so a page of 30 posts used to cost 30 reads on every snapshot.
+  final Map<String, bool> _likedByPostCache = {};
+  String? _cachedForUserId;
+
   Stream<List<FeedPost>> watchPosts() {
     final userId = _userId;
+    if (_cachedForUserId != userId) {
+      _likedByPostCache.clear();
+      _cachedForUserId = userId;
+    }
     return _posts
         .orderBy('createdAt', descending: true)
         .limit(postPageSize)
         .snapshots()
         .asyncMap((snapshot) async {
-          return Future.wait(
-            snapshot.docs.map((document) async {
-              try {
-                final like = await document.reference
-                    .collection('likes')
-                    .doc(userId)
-                    .get();
-                return FeedPost.fromFirestore(
+          final visibleIds = snapshot.docs
+              .map((document) => document.id)
+              .toSet();
+          _likedByPostCache.removeWhere((id, _) => !visibleIds.contains(id));
+          final unknown = snapshot.docs
+              .where((document) => !_likedByPostCache.containsKey(document.id))
+              .toList(growable: false);
+          if (unknown.isNotEmpty) {
+            await Future.wait(
+              unknown.map((document) async {
+                try {
+                  final like = await document.reference
+                      .collection('likes')
+                      .doc(userId)
+                      .get();
+                  _likedByPostCache[document.id] = like.exists;
+                } catch (error, stackTrace) {
+                  _logFailure(
+                    'load the current user post reaction',
+                    error,
+                    stackTrace,
+                  );
+                  rethrow;
+                }
+              }),
+            );
+          }
+          return snapshot.docs
+              .map(
+                (document) => FeedPost.fromFirestore(
                   document: document,
-                  isLiked: like.exists,
-                );
-              } catch (error, stackTrace) {
-                _logFailure(
-                  'load the current user post reaction',
-                  error,
-                  stackTrace,
-                );
-                rethrow;
-              }
-            }),
-          );
+                  isLiked: _likedByPostCache[document.id] ?? false,
+                ),
+              )
+              .toList(growable: false);
         });
   }
 
@@ -179,6 +202,7 @@ class FeedRepository {
     final userId = _userId;
     final postReference = _posts.doc(post.id);
     final likeReference = postReference.collection('likes').doc(userId);
+    var nowLiked = false;
     await _firestore.runTransaction((transaction) async {
       final postSnapshot = await transaction.get(postReference);
       final likeSnapshot = await transaction.get(likeReference);
@@ -196,8 +220,10 @@ class FeedRepository {
           'createdAt': FieldValue.serverTimestamp(),
         });
         transaction.update(postReference, {'likesCount': likeCount + 1});
+        nowLiked = true;
       }
     });
+    _likedByPostCache[post.id] = nowLiked;
   }
 
   Future<void> addComment({
