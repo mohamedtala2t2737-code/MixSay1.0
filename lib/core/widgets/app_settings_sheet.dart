@@ -59,66 +59,68 @@ class AppSettingsSheet extends ConsumerWidget {
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              s.settings,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                s.settings,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Text(s.language, style: theme.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                _Choice(
-                  label: s.followSystem,
-                  selected: locale == null,
-                  onTap: localeController.useSystemLocale,
-                ),
-                _Choice(
-                  label: s.arabic,
-                  selected: locale?.languageCode == 'ar',
-                  onTap: () => localeController.setLocale(const Locale('ar')),
-                ),
-                _Choice(
-                  label: s.english,
-                  selected: locale?.languageCode == 'en',
-                  onTap: () => localeController.setLocale(const Locale('en')),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Text(s.appearance, style: theme.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                _Choice(
-                  label: s.followSystem,
-                  icon: Icons.brightness_auto_outlined,
-                  selected: themeMode == ThemeMode.system,
-                  onTap: () => themeController.setMode(ThemeMode.system),
-                ),
-                _Choice(
-                  label: s.lightMode,
-                  icon: Icons.light_mode_outlined,
-                  selected: themeMode == ThemeMode.light,
-                  onTap: () => themeController.setMode(ThemeMode.light),
-                ),
-                _Choice(
-                  label: s.darkMode,
-                  icon: Icons.dark_mode_outlined,
-                  selected: themeMode == ThemeMode.dark,
-                  onTap: () => themeController.setMode(ThemeMode.dark),
-                ),
-              ],
-            ),
-          ],
+              const SizedBox(height: 20),
+              Text(s.language, style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  _Choice(
+                    label: s.followSystem,
+                    selected: locale == null,
+                    onTap: localeController.useSystemLocale,
+                  ),
+                  _Choice(
+                    label: s.arabic,
+                    selected: locale?.languageCode == 'ar',
+                    onTap: () => localeController.setLocale(const Locale('ar')),
+                  ),
+                  _Choice(
+                    label: s.english,
+                    selected: locale?.languageCode == 'en',
+                    onTap: () => localeController.setLocale(const Locale('en')),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text(s.appearance, style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  _Choice(
+                    label: s.followSystem,
+                    icon: Icons.brightness_auto_outlined,
+                    selected: themeMode == ThemeMode.system,
+                    onTap: () => themeController.setMode(ThemeMode.system),
+                  ),
+                  _Choice(
+                    label: s.lightMode,
+                    icon: Icons.light_mode_outlined,
+                    selected: themeMode == ThemeMode.light,
+                    onTap: () => themeController.setMode(ThemeMode.light),
+                  ),
+                  _Choice(
+                    label: s.darkMode,
+                    icon: Icons.dark_mode_outlined,
+                    selected: themeMode == ThemeMode.dark,
+                    onTap: () => themeController.setMode(ThemeMode.dark),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

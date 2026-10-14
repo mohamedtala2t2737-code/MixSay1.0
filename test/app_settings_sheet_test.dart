@@ -88,6 +88,45 @@ void main() {
     expect(prefs.getString('app_theme_mode'), 'dark');
   });
 
+  testWidgets('the settings sheet scrolls instead of clipping at a big scale', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await tester.binding.setSurfaceSize(const Size(360, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          localizationsDelegates: const [
+            AppStrings.delegate,
+            ...GlobalMaterialLocalizations.delegates,
+          ],
+          supportedLocales: AppStrings.supportedLocales,
+          home: Scaffold(
+            appBar: AppBar(actions: const [AppSettingsIconButton()]),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+
+    // The theme row sits under the fold once the sheet is short and the text
+    // is large; before the sheet scrolled it was simply cut off.
+    expect(find.text('Dark'), findsOneWidget);
+    await tester.ensureVisible(find.text('Dark'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.text('Dark')).bottom, lessThan(320));
+    expect(tester.takeException(), isNull);
+  });
+
   test(
     'the stored language and theme are ready for the very first frame',
     () async {

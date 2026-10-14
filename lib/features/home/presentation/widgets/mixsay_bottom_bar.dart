@@ -31,6 +31,10 @@ class MixSayBottomBar extends StatelessWidget {
     final s = AppStrings.of(context);
     final theme = Theme.of(context);
     final bottomInset = MediaQuery.paddingOf(context).bottom;
+    // The label under each icon needs room to grow with the system text scale;
+    // the arch painter works from the laid-out size, so a taller bar keeps the
+    // same silhouette instead of clipping the tab names.
+    final barSlotHeight = MediaQuery.textScalerOf(context).scale(barHeight);
 
     final tabs = <_NavItem>[
       _NavItem(
@@ -61,7 +65,7 @@ class MixSayBottomBar extends StatelessWidget {
     ];
 
     return SizedBox(
-      height: headroom + barHeight + bottomInset,
+      height: headroom + barSlotHeight + bottomInset,
       child: Stack(
         clipBehavior: Clip.none,
         children: [

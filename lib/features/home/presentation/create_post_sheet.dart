@@ -197,8 +197,10 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                 Expanded(
                   child: Align(
                     alignment: AlignmentDirectional.centerEnd,
-                    child: SizedBox(
-                      width: 150,
+                    child: ConstrainedBox(
+                      // A hard 150 clipped "جارٍ النشر..." at large text
+                      // scales; the button now keeps its floor but can grow.
+                      constraints: const BoxConstraints(minWidth: 150),
                       child: PrimaryButton(
                         label: _busy ? s.publishing : s.publish,
                         loading: _busy,

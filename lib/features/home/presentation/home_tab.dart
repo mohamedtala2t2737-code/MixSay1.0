@@ -17,6 +17,7 @@ class HomeTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = AppStrings.of(context);
+    final scaler = MediaQuery.textScalerOf(context);
     final posts = ref.watch(feedPostsProvider);
     final items = posts.value ?? const <FeedPost>[];
 
@@ -40,11 +41,18 @@ class HomeTab extends ConsumerWidget {
         slivers: [
           const SliverToBoxAdapter(child: StoriesBar()),
           if (status != null)
-            SliverToBoxAdapter(child: SizedBox(height: 300, child: status))
+            SliverToBoxAdapter(
+              child: SizedBox(
+                // Scaled with the text size: a fixed 300/340 block clipped the
+                // empty-feed button once the system font scale went up.
+                height: scaler.scale(300),
+                child: status,
+              ),
+            )
           else if (items.isEmpty)
             SliverToBoxAdapter(
               child: SizedBox(
-                height: 340,
+                height: scaler.scale(340),
                 child: EmptyStateView(
                   icon: Icons.auto_awesome_outlined,
                   title: s.feedEmptyTitle,

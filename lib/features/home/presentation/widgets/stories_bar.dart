@@ -72,12 +72,15 @@ class _StoriesBarState extends ConsumerState<StoriesBar> {
     final profile = ref.watch(currentProfileProvider).value;
     final groupsAsync = ref.watch(activeStoriesProvider);
     final groups = groupsAsync.value ?? const <StoryGroup>[];
+    // The ring plus the author name under it; the name has to keep growing
+    // with the system text scale instead of being clipped by a fixed rail.
+    final railHeight = MediaQuery.textScalerOf(context).scale(96);
 
     if (groupsAsync.hasError) {
       // Without this the rail used to render as an empty row of nothing at all
       // whenever the read failed, which looked like "nobody posted".
       return SizedBox(
-        height: 96,
+        height: railHeight,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -101,10 +104,10 @@ class _StoriesBarState extends ConsumerState<StoriesBar> {
     }
 
     if (groupsAsync.isLoading) {
-      return const SizedBox(
-        height: 96,
+      return SizedBox(
+        height: railHeight,
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Row(
             children: [
               _StorySkeletonTile(),
@@ -121,7 +124,7 @@ class _StoriesBarState extends ConsumerState<StoriesBar> {
     final ordered = <StoryGroup>[...mine, ...others];
 
     return SizedBox(
-      height: 96,
+      height: railHeight,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
