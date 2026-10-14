@@ -266,6 +266,34 @@ export const removePostLikeNotifications = onDocumentDeleted(
   },
 );
 
+/**
+ * A post owns its likes and comments, but Firestore never cascades deletes. Left
+ * alone, every deleted post keeps its subcollection documents forever: they stay
+ * billable and keep matching collection-group reads. Writes are chunked because
+ * a batch tops out at 500 operations.
+ */
+export const cleanupPostChildren = onDocumentDeleted(
+  "posts/{postId}",
+  async (event) => {
+    const { postId } = event.params;
+
+    for (const childCollection of ["likes", "comments"]) {
+      const children = await firestore
+        .collection(`posts/${postId}/${childCollection}`)
+        .get();
+      const documents = children.docs;
+
+      for (let start = 0; start < documents.length; start += 400) {
+        const batch = firestore.batch();
+        for (const document of documents.slice(start, start + 400)) {
+          batch.delete(document.ref);
+        }
+        await batch.commit();
+      }
+    }
+  },
+);
+
 export const sendPostCommentNotification = onDocumentCreated(
   "posts/{postId}/comments/{commentId}",
   async (event) => {

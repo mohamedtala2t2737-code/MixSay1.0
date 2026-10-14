@@ -291,7 +291,11 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if isConversationMember(conversationId);
+        allow get: if isConversationMember(conversationId);
+        // watchRecentMessages uses limitToLast(100) and getMessages limit(30);
+        // the cap stops a member from dumping a whole thread in one request.
+        allow list: if isConversationMember(conversationId)
+          && request.query.limit <= 100;
 
         allow create: if isConversationMember(conversationId)
           && request.resource.data.senderId == request.auth.uid
@@ -349,7 +353,12 @@ service cloud.firestore {
               && request.resource.data.status == 'read'
             )
           );
-        allow delete: if false;
+        // Only the sender may remove a message, never the recipient. The app
+        // offers this for queued/failed sends: without it, a send that quietly
+        // reached Firestore while the local queue still said "failed" could
+        // never be got rid of and would reappear on the next sync.
+        allow delete: if isConversationMember(conversationId)
+          && resource.data.senderId == request.auth.uid;
       }
     }
 

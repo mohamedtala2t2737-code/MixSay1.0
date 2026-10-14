@@ -661,8 +661,17 @@ class ChatRepository {
     return flushPendingMessages();
   }
 
-  Future<void> deletePendingMessage(String clientId) =>
-      _pendingQueue.delete(clientId: clientId, senderId: _me);
+  /// Forgets a queued or failed message: drops the local queue entry and, in
+  /// case the transaction had already reached Firestore, deletes that document
+  /// too. Only the sender can do this (see firestore.rules), so anything the
+  /// other side already received stays in their copy of the thread.
+  Future<void> deleteMessage({
+    required String conversationId,
+    required String clientId,
+  }) async {
+    await _pendingQueue.delete(clientId: clientId, senderId: _me);
+    await _messages(conversationId).doc(clientId).delete();
+  }
 
   Future<void> markMessagesRead(String conversationId) async {
     final userId = _me;

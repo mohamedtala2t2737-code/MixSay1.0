@@ -431,7 +431,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final clientId = message.clientId;
     if (clientId == null) return;
     try {
-      await ref.read(chatRepositoryProvider).deletePendingMessage(clientId);
+      await ref
+          .read(chatRepositoryProvider)
+          .deleteMessage(
+            conversationId: message.conversationId,
+            clientId: clientId,
+          );
       if (!mounted) return;
       setState(() {
         _messages.removeWhere(
