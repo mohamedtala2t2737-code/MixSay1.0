@@ -40,6 +40,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _hasMore = true;
   bool _hasLoadedOlder = false;
   bool _sending = false;
+  Object? _messagesStreamError;
   QueryDocumentSnapshot<Map<String, dynamic>>? _oldestMessageDocument;
   ChatConversationInfo? _conversation;
   List<ChatMessage> _messages = [];
@@ -301,6 +302,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _subscribeToMessages() {
+    _messageSubscription?.cancel();
     _messageSubscription = ref
         .read(chatRepositoryProvider)
         .watchRecentMessages(widget.conversationId)
@@ -309,12 +311,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           onError: (Object error, StackTrace stackTrace) {
             debugPrint('Unable to subscribe to chat messages: $error');
             debugPrintStack(stackTrace: stackTrace);
+            if (!mounted) return;
+            setState(() => _messagesStreamError = error);
           },
         );
   }
 
+  void _retryMessageSubscription() {
+    setState(() {
+      _messagesStreamError = null;
+      _loading = true;
+    });
+    _loadMessages();
+    _subscribeToMessages();
+  }
+
   void _handleMessageChanges(List<ChatMessage> messages) {
     if (!mounted) return;
+    if (_messagesStreamError != null) {
+      setState(() => _messagesStreamError = null);
+    }
     final nearNewest =
         !_scrollController.hasClients ||
         _scrollController.position.pixels <= 80;
@@ -545,6 +561,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
               )
             else ...[
+              if (_messagesStreamError != null)
+                Container(
+                  width: double.infinity,
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s.loadFailed,
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onErrorContainer,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _retryMessageSubscription,
+                        child: Text(s.retry),
+                      ),
+                    ],
+                  ),
+                ),
               Expanded(
                 child: NotificationListener<ScrollNotification>(
                   onNotification: (notification) {
