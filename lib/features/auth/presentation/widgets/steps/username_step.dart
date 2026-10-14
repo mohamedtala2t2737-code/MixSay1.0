@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
+import 'package:social_chat/core/theme/app_typography.dart';
 import 'package:social_chat/core/widgets/app_text_field.dart';
 import 'package:social_chat/features/auth/domain/username_policy.dart';
 
@@ -144,7 +145,7 @@ class _UsernameStepViewState extends State<UsernameStepView> {
                     helper,
                     style: TextStyle(
                       color: helperColor,
-                      fontSize: 12.5,
+                      fontSize: AppTypography.helper,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

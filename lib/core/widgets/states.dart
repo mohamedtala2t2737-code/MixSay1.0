@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../theme/app_spacing.dart';
 
 class LoadingView extends StatelessWidget {
   const LoadingView({super.key});
@@ -8,7 +9,7 @@ class LoadingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
+          padding: EdgeInsets.all(AppSpacing.block),
           child: CircularProgressIndicator(),
         ),
       );
@@ -25,15 +26,15 @@ class ErrorStateView extends StatelessWidget {
     final theme = Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(AppSpacing.block),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             Text(message, textAlign: TextAlign.center),
             if (onRetry != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.lg),
               OutlinedButton(
                 onPressed: onRetry,
                 child: Text(AppStrings.of(context).retry),
@@ -67,12 +68,12 @@ class EmptyStateView extends StatelessWidget {
     final theme = Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(AppSpacing.block),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 56, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             Text(
               title,
               textAlign: TextAlign.center,
@@ -80,7 +81,7 @@ class EmptyStateView extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w600),
             ),
             if (subtitle != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
               Text(
                 subtitle!,
                 textAlign: TextAlign.center,
@@ -88,7 +89,7 @@ class EmptyStateView extends StatelessWidget {
               ),
             ],
             if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: AppSpacing.xl),
               FilledButton(onPressed: onAction, child: Text(actionLabel!)),
             ],
           ],

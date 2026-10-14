@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/theme/app_typography.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
@@ -76,7 +77,7 @@ class ConversationsListView extends ConsumerWidget {
                     if (item.lastMessageAt != null)
                       Text(
                         _timeLabel(item.lastMessageAt),
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: AppTypography.caption),
                       ),
                   ],
                 ),

@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 
 import '../l10n/app_strings.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_radius.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
 
 class AppTextField extends StatefulWidget {
   const AppTextField({
@@ -77,13 +80,13 @@ class _AppTextFieldState extends State<AppTextField> {
       style: TextStyle(color: theme.colorScheme.onSurface),
       decoration: InputDecoration(
         hintText: widget.hint ?? widget.label,
-        hintStyle: TextStyle(color: placeholder, fontSize: 15),
+        hintStyle: TextStyle(
+          color: placeholder,
+          fontSize: AppTypography.control,
+        ),
         counterText: '',
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 16,
-        ),
+        contentPadding: AppSpacing.field,
         prefixIcon: widget.icon == null
             ? null
             : Icon(widget.icon, color: placeholder, size: 22),
@@ -120,7 +123,7 @@ class _AppTextFieldState extends State<AppTextField> {
       children: [
         Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(15.6),
+            borderRadius: AppRadius.fieldBorder,
             gradient: hasError ? null : AppColors.brandGradient,
             border: hasError
                 ? Border.all(color: theme.colorScheme.error, width: 1.6)
@@ -132,18 +135,30 @@ class _AppTextFieldState extends State<AppTextField> {
         ),
         if (hasError)
           Padding(
-            padding: const EdgeInsetsDirectional.only(top: 6, start: 12),
+            padding: const EdgeInsetsDirectional.only(
+              top: 6,
+              start: AppSpacing.md,
+            ),
             child: Text(
               widget.errorText!,
-              style: TextStyle(color: theme.colorScheme.error, fontSize: 12.5),
+              style: TextStyle(
+                color: theme.colorScheme.error,
+                fontSize: AppTypography.helper,
+              ),
             ),
           )
         else if (widget.helperText != null)
           Padding(
-            padding: const EdgeInsetsDirectional.only(top: 6, start: 12),
+            padding: const EdgeInsetsDirectional.only(
+              top: 6,
+              start: AppSpacing.md,
+            ),
             child: Text(
               widget.helperText!,
-              style: TextStyle(color: placeholder, fontSize: 12.5),
+              style: TextStyle(
+                color: placeholder,
+                fontSize: AppTypography.helper,
+              ),
             ),
           ),
       ],

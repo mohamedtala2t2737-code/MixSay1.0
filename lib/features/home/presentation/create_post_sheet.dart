@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/theme/app_radius.dart';
 import 'package:social_chat/core/utils/picked_media.dart';
 import 'package:social_chat/core/widgets/primary_button.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
@@ -141,7 +142,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
         children: [
           if (bytes != null && !media.isVideo)
             ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppRadius.mdBorder,
               child: Image.memory(
                 bytes,
                 height: 200,
@@ -225,7 +226,7 @@ class _CreatePostSheetState extends ConsumerState<_CreatePostSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: AppRadius.chipBorder,
                       child: LinearProgressIndicator(value: _progress),
                     ),
                     const SizedBox(height: 4),
@@ -293,7 +294,7 @@ class _VideoPreview extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 120),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: AppRadius.mdBorder,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(

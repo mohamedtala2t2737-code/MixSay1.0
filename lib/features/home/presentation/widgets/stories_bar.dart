@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/theme/app_radius.dart';
 import 'package:social_chat/core/utils/picked_image.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
@@ -187,7 +188,7 @@ class _StorySkeletonTile extends StatelessWidget {
             height: 8,
             decoration: BoxDecoration(
               color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: AppRadius.chipBorder,
             ),
           ),
         ],
