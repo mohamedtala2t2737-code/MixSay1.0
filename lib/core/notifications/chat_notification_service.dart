@@ -63,6 +63,10 @@ class ChatNotificationService {
   );
   static const _pendingConversationKey = 'pending_notification_conversation';
 
+  /// A delivery sweep reads every conversation of the user, so bursts of pushes
+  /// are coalesced into one sweep per this window instead of one per push.
+  static const _deliveredSweepCooldown = Duration(seconds: 20);
+
   final _messaging = FirebaseMessaging.instance;
   final _localNotifications = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
@@ -76,6 +80,10 @@ class ChatNotificationService {
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<String>? _tokenRefreshSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  DateTime? _lastDeliveredSweep;
+  bool _deliveredSweepRunning = false;
+  bool _deliveredSweepRequestedAgain = false;
+  Timer? _deliveredSweepTimer;
 
   Future<void> initialize({
     required Future<void> Function(String conversationId) onOpenConversation,
@@ -199,6 +207,11 @@ class ChatNotificationService {
     _initialized = false;
     _onOpenConversation = null;
     _pendingConversationId = null;
+    _deliveredSweepTimer?.cancel();
+    _deliveredSweepTimer = null;
+    _deliveredSweepRunning = false;
+    _deliveredSweepRequestedAgain = false;
+    _lastDeliveredSweep = null;
     _lifecycleListener?.dispose();
     _lifecycleListener = null;
     await Future.wait([
@@ -415,11 +428,36 @@ class ChatNotificationService {
 
   Future<void> _markReceivedMessagesDelivered() async {
     if (FirebaseAuth.instance.currentUser == null) return;
+    if (_deliveredSweepRunning) {
+      _deliveredSweepRequestedAgain = true;
+      return;
+    }
+    final lastSweep = _lastDeliveredSweep;
+    if (lastSweep != null) {
+      final remaining =
+          _deliveredSweepCooldown - DateTime.now().difference(lastSweep);
+      if (remaining > Duration.zero) {
+        _deliveredSweepTimer?.cancel();
+        _deliveredSweepTimer = Timer(
+          remaining,
+          () => unawaited(_markReceivedMessagesDelivered()),
+        );
+        return;
+      }
+    }
+    _deliveredSweepRunning = true;
     try {
       await ChatRepository().markReceivedMessagesDelivered();
+      _lastDeliveredSweep = DateTime.now();
     } catch (error, stackTrace) {
       debugPrint('Unable to update received message statuses: $error');
       debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      _deliveredSweepRunning = false;
+      if (_deliveredSweepRequestedAgain) {
+        _deliveredSweepRequestedAgain = false;
+        unawaited(_markReceivedMessagesDelivered());
+      }
     }
   }
 }

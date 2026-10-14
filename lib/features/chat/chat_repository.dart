@@ -668,6 +668,7 @@ class ChatRepository {
         .where('recipientId', isEqualTo: userId)
         .where('status', whereIn: const ['sent', 'delivered'])
         .orderBy('createdAt', descending: true)
+        .limit(100)
         .get();
     final legacyMessages = await currentMessages
         .where('status', whereIn: const ['sent', 'delivered'])
@@ -696,6 +697,7 @@ class ChatRepository {
     final userId = _me;
     final conversations = await _conversations
         .where('members', arrayContains: userId)
+        .limit(100)
         .get();
     for (final conversation in conversations.docs) {
       final unreadCounts =
