@@ -17,7 +17,9 @@ final notificationsProvider = StreamProvider.autoDispose<List<AppNotification>>(
   },
 );
 
-final unreadNotificationsCountProvider = Provider<int>((ref) {
+/// Keeps the notification stream alive only while something is watching the
+/// badge (the main shell), so signing out closes the Firestore listener.
+final unreadNotificationsCountProvider = Provider.autoDispose<int>((ref) {
   final notifications = ref.watch(notificationsProvider).value;
   if (notifications == null) return 0;
   return notifications.where((notification) => !notification.isRead).length;
