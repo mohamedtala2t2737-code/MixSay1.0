@@ -263,9 +263,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                 decoration: InputDecoration(
                   labelText: s.month,
                   filled: true,
-                  fillColor: AppColors.fieldFill(
-                    Theme.of(context).brightness,
-                  ),
+                  fillColor: AppColors.fieldFill(Theme.of(context).brightness),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -399,6 +397,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                           controller: _fullNameController,
                           errorText: _errors['fullName'],
                           textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.name],
                           onChanged: (_) => _clearError('fullName'),
                         ),
                         const SizedBox(height: 12),
@@ -409,6 +408,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                           errorText: _errors['email'],
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.email],
                           onChanged: (_) => _clearError('email'),
                         ),
                         const SizedBox(height: 12),
@@ -440,6 +440,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                           helperText: s.passwordHint,
                           obscure: true,
                           textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.newPassword],
                           onChanged: (_) => _clearError('password'),
                         ),
                         const SizedBox(height: 12),
@@ -450,6 +451,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                           errorText: _errors['confirmPassword'],
                           obscure: true,
                           textInputAction: TextInputAction.done,
+                          autofillHints: const [AutofillHints.newPassword],
                           onChanged: (_) => _clearError('confirmPassword'),
                           onSubmitted: (_) => _submit(),
                         ),

@@ -76,7 +76,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               children: [
                 const SizedBox(height: 40),
                 const Center(
-                  child: MixSayLogo(showIcon: false, fontSize: 52, fontStyle: FontStyle.italic),
+                  child: MixSayLogo(
+                    showIcon: false,
+                    fontSize: 52,
+                    fontStyle: FontStyle.italic,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -93,6 +97,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
+                  autofillHints: const [
+                    AutofillHints.username,
+                    AutofillHints.email,
+                  ],
                   autofocus: true,
                 ),
                 const SizedBox(height: 12),
@@ -102,14 +110,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   controller: _passwordController,
                   obscure: true,
                   textInputAction: TextInputAction.done,
+                  autofillHints: const [AutofillHints.password],
                   onSubmitted: (_) => _submit(),
                 ),
                 Align(
                   alignment: AlignmentDirectional.centerEnd,
                   child: TextButton(
-                    onPressed: authState.isLoading
-                        ? null
-                        : _showPasswordReset,
+                    onPressed: authState.isLoading ? null : _showPasswordReset,
                     child: Text(s.forgotPassword),
                   ),
                 ),
@@ -227,6 +234,7 @@ class _PasswordResetDialogState extends State<_PasswordResetDialog> {
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   errorText: _error,
+                  autofillHints: const [AutofillHints.email],
                   autofocus: true,
                   onSubmitted: (_) => _submit(s),
                 ),
@@ -252,9 +260,7 @@ class _PasswordResetDialogState extends State<_PasswordResetDialog> {
         TextButton(
           onPressed: _sending
               ? null
-              : () => _sent
-              ? Navigator.of(context).pop()
-              : _submit(s),
+              : () => _sent ? Navigator.of(context).pop() : _submit(s),
           child: Text(s.continueButton),
         ),
       ],

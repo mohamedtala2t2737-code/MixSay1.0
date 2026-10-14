@@ -133,6 +133,8 @@ class AppStrings {
   String get createAccount => isArabic ? 'إنشاء الحساب' : 'Create account';
   String get confirmPassword =>
       isArabic ? 'تأكيد كلمة السر' : 'Confirm password';
+  String get showPassword => isArabic ? 'إظهار كلمة السر' : 'Show password';
+  String get hidePassword => isArabic ? 'إخفاء كلمة السر' : 'Hide password';
   String get forgotPassword =>
       isArabic ? 'نسيت كلمة السر؟' : 'Forgot your password?';
   String get resetLinkSent => isArabic

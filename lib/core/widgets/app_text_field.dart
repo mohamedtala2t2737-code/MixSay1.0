@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_strings.dart';
 import '../theme/app_colors.dart';
 
 class AppTextField extends StatefulWidget {
@@ -15,6 +16,7 @@ class AppTextField extends StatefulWidget {
     this.icon,
     this.keyboardType,
     this.textInputAction,
+    this.autofillHints,
     this.autofocus = false,
     this.maxLines = 1,
     this.maxLength,
@@ -33,6 +35,7 @@ class AppTextField extends StatefulWidget {
   final IconData? icon;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
+  final List<String>? autofillHints;
   final bool autofocus;
   final int? maxLines;
   final int? maxLength;
@@ -66,6 +69,7 @@ class _AppTextFieldState extends State<AppTextField> {
       obscureText: _obscured,
       keyboardType: widget.keyboardType,
       textInputAction: widget.textInputAction,
+      autofillHints: widget.autofillHints,
       onChanged: widget.onChanged,
       onSubmitted: widget.onSubmitted,
       autocorrect: false,
@@ -89,6 +93,9 @@ class _AppTextFieldState extends State<AppTextField> {
         ),
         suffixIcon: widget.obscure
             ? IconButton(
+                tooltip: _obscured
+                    ? AppStrings.of(context).showPassword
+                    : AppStrings.of(context).hidePassword,
                 icon: Icon(
                   _obscured
                       ? Icons.visibility_outlined
@@ -128,10 +135,7 @@ class _AppTextFieldState extends State<AppTextField> {
             padding: const EdgeInsetsDirectional.only(top: 6, start: 12),
             child: Text(
               widget.errorText!,
-              style: TextStyle(
-                color: theme.colorScheme.error,
-                fontSize: 12.5,
-              ),
+              style: TextStyle(color: theme.colorScheme.error, fontSize: 12.5),
             ),
           )
         else if (widget.helperText != null)
@@ -139,10 +143,7 @@ class _AppTextFieldState extends State<AppTextField> {
             padding: const EdgeInsetsDirectional.only(top: 6, start: 12),
             child: Text(
               widget.helperText!,
-              style: TextStyle(
-                color: placeholder,
-                fontSize: 12.5,
-              ),
+              style: TextStyle(color: placeholder, fontSize: 12.5),
             ),
           ),
       ],
