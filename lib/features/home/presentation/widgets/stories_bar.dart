@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
-import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/utils/picked_image.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
@@ -218,7 +217,7 @@ class _StoryTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
-  static const _ringSize = 66.0;
+  static const _faceRadius = 26.0;
 
   @override
   Widget build(BuildContext context) {
@@ -231,87 +230,13 @@ class _StoryTile extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              width: _ringSize,
-              height: _ringSize,
-              child: Stack(
-                alignment: Alignment.center,
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: _ringSize,
-                    height: _ringSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: hasStory
-                          ? const SweepGradient(
-                              colors: [
-                                AppColors.brandBlue,
-                                AppColors.brandYellow,
-                                AppColors.brandPink,
-                                AppColors.brandPurple,
-                                AppColors.brandBlue,
-                              ],
-                            )
-                          : null,
-                      color: hasStory
-                          ? null
-                          : theme.colorScheme.surfaceContainerHighest,
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(hasStory ? 3 : 2),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: theme.colorScheme.surface,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(2),
-                          child: UserAvatar(
-                            name: fallbackName,
-                            url: avatarUrl,
-                            radius: 26,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (busy)
-                    const SizedBox(
-                      width: _ringSize,
-                      height: _ringSize,
-                      child: Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2.5),
-                        ),
-                      ),
-                    ),
-                  if (showPlus)
-                    PositionedDirectional(
-                      bottom: 2,
-                      end: 2,
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.brandBlue,
-                          border: Border.all(
-                            color: theme.colorScheme.surface,
-                            width: 2,
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.add,
-                          size: 12,
-                          color: AppColors.onBrandGradient,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+            UserAvatar(
+              name: fallbackName,
+              url: avatarUrl,
+              radius: _faceRadius,
+              story: hasStory ? AvatarStory.unseen : AvatarStory.seen,
+              busy: busy,
+              showPlus: showPlus,
             ),
             const SizedBox(height: 6),
             Text(
