@@ -11,27 +11,35 @@ void main() {
 
   test('minutes', () {
     expect(timeAgo(ago(const Duration(minutes: 5)), isArabic: false), '5m');
-    expect(timeAgo(ago(const Duration(minutes: 5)), isArabic: true), '5 د');
+    expect(timeAgo(ago(const Duration(minutes: 5)), isArabic: true), '٥ د');
   });
 
   test('hours', () {
     expect(timeAgo(ago(const Duration(hours: 3)), isArabic: false), '3h');
-    expect(timeAgo(ago(const Duration(hours: 3)), isArabic: true), '3 س');
+    expect(timeAgo(ago(const Duration(hours: 3)), isArabic: true), '٣ س');
   });
 
   test('days', () {
     expect(timeAgo(ago(const Duration(days: 2)), isArabic: false), '2d');
-    expect(timeAgo(ago(const Duration(days: 2)), isArabic: true), '2 يوم');
+    expect(timeAgo(ago(const Duration(days: 2)), isArabic: true), '٢ يوم');
   });
 
   test('weeks', () {
     expect(timeAgo(ago(const Duration(days: 14)), isArabic: false), '2w');
-    expect(timeAgo(ago(const Duration(days: 14)), isArabic: true), '2 أسبوع');
+    expect(timeAgo(ago(const Duration(days: 14)), isArabic: true), '٢ أسبوع');
   });
 
   test('months and years', () {
     expect(timeAgo(ago(const Duration(days: 90)), isArabic: false), '3mo');
     expect(timeAgo(ago(const Duration(days: 730)), isArabic: false), '2y');
-    expect(timeAgo(ago(const Duration(days: 730)), isArabic: true), '2 سنة');
+    expect(timeAgo(ago(const Duration(days: 730)), isArabic: true), '٢ سنة');
+  });
+
+  test('two-digit numbers convert every digit', () {
+    expect(
+      timeAgo(ago(const Duration(minutes: 59, seconds: 50)), isArabic: true),
+      '٥٩ د',
+    );
+    expect(timeAgo(ago(const Duration(days: 340)), isArabic: true), '١١ شهر');
   });
 }

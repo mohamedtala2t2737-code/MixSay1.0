@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 
+import 'package:social_chat/core/utils/arabic_digits.dart';
+
 class AppStrings {
   const AppStrings(this.locale);
 
   final Locale locale;
 
   bool get isArabic => locale.languageCode == 'ar';
+
+  /// Arabic copy is written with ٠-٩, so numbers shown beside it convert too.
+  String number(Object value) => localizeDigits('$value', isArabic: isArabic);
 
   static const supportedLocales = [Locale('en'), Locale('ar')];
 
@@ -198,7 +203,7 @@ class AppStrings {
       ? 'لم يتم تأكيد البريد بعد. افتح رابط الرسالة أولًا.'
       : 'Email is not verified yet. Open the link in the email first.';
   String verificationResendCooldown(int seconds) => isArabic
-      ? 'إعادة الإرسال بعد $seconds ثانية'
+      ? 'إعادة الإرسال بعد ${number(seconds)} ثانية'
       : 'Resend in $seconds seconds';
   String get signInToResendVerification => isArabic
       ? 'سجّل الدخول ببريدك وكلمة السر لإعادة إرسال رسالة التأكيد.'
@@ -221,8 +226,9 @@ class AppStrings {
   String get sendImage => isArabic ? 'إرسال صورة' : 'Send image';
   String get retrySend => isArabic ? 'إعادة الإرسال' : 'Retry';
   String get deleteMessage => isArabic ? 'حذف الرسالة' : 'Delete';
-  String messageCharacterCount(int current, int maximum) =>
-      isArabic ? '$current/$maximum حرف' : '$current/$maximum characters';
+  String messageCharacterCount(int current, int maximum) => isArabic
+      ? '${number(current)}/${number(maximum)} حرف'
+      : '$current/$maximum characters';
   String get noMessagesYet => isArabic ? 'مافيش رسائل لسه' : 'No messages yet';
   String get startConversation => isArabic
       ? 'ابدأ محادثة مع أي شخص من حسابه أو البحث.'
@@ -275,9 +281,10 @@ class AppStrings {
   String get like => isArabic ? 'إعجاب' : 'Like';
   String get unlike => isArabic ? 'إلغاء الإعجاب' : 'Unlike';
   String get comments => isArabic ? 'تعليقات' : 'Comments';
-  String likesCount(int count) => isArabic ? '$count إعجاب' : '$count likes';
+  String likesCount(int count) =>
+      isArabic ? '${number(count)} إعجاب' : '$count likes';
   String commentsCount(int count) =>
-      isArabic ? '$count تعليق' : '$count comments';
+      isArabic ? '${number(count)} تعليق' : '$count comments';
   String get writeComment => isArabic ? 'اكتب تعليقًا…' : 'Add a comment…';
   String get noComments => isArabic ? 'مافيش تعليقات لسه' : 'No comments yet';
   String get commentAdded => isArabic ? 'تم إرسال التعليق' : 'Comment added';

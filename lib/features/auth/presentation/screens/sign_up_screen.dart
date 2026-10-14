@@ -200,6 +200,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
     required ValueChanged<int?> onChanged,
   }) {
     final theme = Theme.of(context);
+    final s = AppStrings.of(context);
     return DropdownButtonFormField<int>(
       initialValue: value,
       isExpanded: true,
@@ -217,10 +218,8 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
       ),
       items: values
           .map(
-            (item) => DropdownMenuItem<int>(
-              value: item,
-              child: Text(item.toString()),
-            ),
+            (item) =>
+                DropdownMenuItem<int>(value: item, child: Text(s.number(item))),
           )
           .toList(),
       onChanged: onChanged,

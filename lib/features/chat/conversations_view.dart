@@ -88,7 +88,7 @@ class ConversationsListView extends ConsumerWidget {
                         radius: 10,
                         backgroundColor: Theme.of(context).colorScheme.primary,
                         child: Text(
-                          '${item.unreadCount}',
+                          s.number(item.unreadCount),
                           style: const TextStyle(
                             fontSize: 10,
                             color: Colors.white,
