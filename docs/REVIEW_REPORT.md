@@ -74,12 +74,12 @@ npm --prefix functions run lint  → tsc --noEmit بدون أي خطأ
 | A-05 | `firestore.rules:197-198` | مجموعة `conversations` ماعندهاش حد `request.query.list` بينما المنشورات/القصص/الإشعارات كلها محدودة | Medium | قائمة محادثات ضخمة = قرايات بلا سقف | إضافة `limit <= 100` مع التأكد إن العميل بيحدّ فعلًا | S | تم — `limit <= 50` في القواعد والعميل، ومختبَر على المحاكى |
 | A-06 | `firestore.rules:277-286` | أي عضو يقدر يزوّد `unreadCounts` التاني +1 من غير رسايل جديدة (إزعاج شارة) | Medium | عدّاد غير صحيح وسيل إشعارات بصرية | اشتراط وجود رسالة جديدة في نفس الـcommit عبر `getAfter` | M | معالجة جزئية — +1 لكل كتابة محدود ومختبَر؛ اشتراط وجود رسالة جديدة لسه على موافقتك |
 | A-07 | `storage.rules:43-78` | حدود لكل ملف لكن مافيش سقف إجمالي لكل مستخدم | Medium | تخزين غير محدود جوه مساحة المشروع | كوتا لكل uid أو مهمة تنظيف يومية | M | موافقة |
-| U-05 | `lib/features/home/presentation/widgets/stories_bar.dart:29` و`:71` | علم الرفع بيتظبط بعد ما الـpicker يرجع (ضغطة سريعة تفتح المختار مرتين)، وأخطاء/تحميل الستريم بتتجاهل (`value ?? []`) | Medium | سلوك مزدوج + شريط قصص فاضي بصمت لو القراية فشلت | ضبط الانشغال قبل الاختيار + هيكل عظمي/إعادة محاولة | S | مفتوح |
+| U-05 | `lib/features/home/presentation/widgets/stories_bar.dart:29` و`:71` | علم الرفع بيتظبط بعد ما الـpicker يرجع (ضغطة سريعة تفتح المختار مرتين)، وأخطاء/تحميل الستريم بتتجاهل (`value ?? []`) | Medium | سلوك مزدوج + شريط قصص فاضي بصمت لو القراية فشلت | ضبط الانشغال قبل الاختيار + هيكل عظمي/إعادة محاولة | S | تم — `7538adf` العلم قبل فتح المختار + هيكل عظمي وزرار إعادة محاولة |
 | U-06 | `lib/features/home/presentation/widgets/story_viewer.dart:96` | مؤقت 33ms بيعمل `setState` للصفحة كلها (الصور والرأس 30 مرة/ثانية) | Medium | هبوط في الأداء وحرارة بطارية على شاشة المفروض تكون أنعم | تحريك `_ProgressBar` لوحده بـ`ValueNotifier`/`AnimatedBuilder` | M | تم — `3b0c435` شريط التقدم بـ`ValueNotifier` |
 | U-07 | `lib/features/auth/presentation/screens/login_screen.dart:90` | `autofillHints` مفقودة على بريد وكلمة المرور (وفي كل `AppTextField`) | Medium | مديري كلمات المرور والمتصفح مايعبّوش بيانات الدخول | إضافة بارامتر autofill في `AppTextField` وتوصيله | S | تم — `f489f41` `autofillHints` |
 | U-08 | `lib/core/widgets/app_text_field.dart:91` | زرار إظهار/إخفاء كلمة المرور من غير `tooltip` ولا `Semantics` | Medium | قارئ الشاشة مايقولش الزرار بيعمل إيه | tooltip + label من `AppStrings` (مفتاح جديد) | S | تم — `f489f41` tooltip + semantics لزرار إظهار كلمة المرور |
 | U-09 | `lib/features/home/presentation/widgets/notifications_tab.dart:145` | الضغط على إشعار لايك/تعليق بيشيله مقروء وبس — مافيش تنقل للمنشور | Medium | الإشعار يوديك لمكان غامض: المستخدم مايشوفش حاجة | فتح تبويب الإشعارات/المنشور المناسب (يتطلب مسار عرض منشور) | M | موافقة |
-| U-10 | `lib/features/home/presentation/widgets/*` + `mixsay_bottom_bar.dart:20` + `stories_bar.dart:78` + `home_tab.dart:43` + `app_settings_sheet.dart:75` + `create_post_sheet.dart:196` | مقاسات ثابتة (ارتفاع 68/96، عرض 150، كتل 300/340px، `Column` من غير تمرير) | Medium | على خط نظام كبير أو شاشة صغيرة المحتوى يتقص أو يفيض | مقاسات مشتقة من `textScaler` + `SingleChildScrollView` + حدود مرنة | M | مفتوح |
+| U-10 | `lib/features/home/presentation/widgets/*` + `mixsay_bottom_bar.dart:20` + `stories_bar.dart:78` + `home_tab.dart:43` + `app_settings_sheet.dart:75` + `create_post_sheet.dart:196` | مقاسات ثابتة (ارتفاع 68/96، عرض 150، كتل 300/340px، `Column` من غير تمرير) | Medium | على خط نظام كبير أو شاشة صغيرة المحتوى يتقص أو يفيض | مقاسات مشتقة من `textScaler` + `SingleChildScrollView` + حدود مرنة | M | تم — `7ce3def` الشريط/القصص/الصفحة/الزرار/الحوار كلها بتكبر مع حجم الخط، والحوار بيتمرر |
 | U-11 | `lib/features/chat/chat_screen.dart:491` و`:720`، `conversations_view.dart:19` | فواصل التواريخ مخطوفة اليد `dd/MM/yyyy` وإجبار 24 ساعة: ولا «اليوم/أمس» ولا تنسيق عربي صحيح | Medium | قارئ عربي يشوف تواريخ غريبة ومتقطعة | `intl.DateFormat` + مفاتيح `AppStrings` (حزمة جديدة = موافقة) | M | موافقة |
 | U-12 | `lib/features/chat/chat_screen.dart:769` و`:673` | فقاعات الصور 220×160 بثبات، وزرار الإرسال محشور في `CircleAvatar` (~40dp) و«حذف الصورة» 28dp | Medium | صورة كبيرة بتقطع نص الكلام، وأهداف لمس تحت 48dp صعبة على الموبايل | عرض نسبي للصور + أزرار `IconButton` كاملة 48dp | S | تم — `22c1c8a` فقاعات صور نسبية + أهداف لمس 48dp |
 | U-13 | `lib/app.dart:27-29` + `lib/main.dart:7-10` | اللغة والسمة بيتسترجعوا بعد أول frame: ثانية بالعربي/الوضع الداكن قبل أن تظهر اختيارات المستخدم | Medium | ومضة لغة/سمة غلط أول كل فتح | قراءة `SharedPreferences` قبل `runApp` | S | تم — `722f4d6` اللغة والسمة تُقرآن قبل أول frame |
@@ -93,10 +93,10 @@ npm --prefix functions run lint  → tsc --noEmit بدون أي خطأ
 | ID | Screen/File | Problem | Severity | Why it matters | Proposed solution | Effort | Status |
 |---|---|---|---|---|---|---|---|
 | U-16 | `lib/features/home/presentation/widgets/post_card.dart:198` | `EdgeInsets.only(right: 4)` — آخر inset غير اتجاهي فاضي في المشروع | Low | مسافة غلط علي العربي | `EdgeInsetsDirectional.only(end: 4)` | S | تم — `6af454a` `EdgeInsetsDirectional.only(end: 4)` |
-| U-17 | `lib/features/home/presentation/widgets/post_card.dart:122`, `conversations_screen.dart:25` | خلط أيقونات ممتلئة/مفرّغة في نفس القوائم (`bookmark_rounded` و`bookmark_add_outlined`، `favorite_rounded` و`mode_comment_outlined`) | Low | إحساس غير موحد | توحيد علي الـoutlined | S | مفتوح |
-| U-18 | `lib/features/chat/conversations_view.dart:164` | حوار «محادثة جديدة» مثبّت 420×280 و`Column` من غير تمرير | Low | بيتقص في الوضع الأفقي/الشاشات القصيرة | حدود مرنة + تمرير | S | مفتوح |
+| U-17 | `lib/features/home/presentation/widgets/post_card.dart:122`, `conversations_screen.dart:25` | خلط أيقونات ممتلئة/مفرّغة في نفس القوائم (`bookmark_rounded` و`bookmark_add_outlined`، `favorite_rounded` و`mode_comment_outlined`) | Low | إحساس غير موحد | توحيد علي الـoutlined | S | تم — `fc916d7` سطر أزرار البوست كله `rounded` |
+| U-18 | `lib/features/chat/conversations_view.dart:164` | حوار «محادثة جديدة» مثبّت 420×280 و`Column` من غير تمرير | Low | بيتقص في الوضع الأفقي/الشاشات القصيرة | حدود مرنة + تمرير | S | تم — `e26941e` الحوار ياخد عرض وارتفاع الشاشة بحدود |
 | U-19 | `lib/features/chat/conversations_screen.dart:39` | تلات أزرار في الـAppBar ممكن تزاحم العنوان علي 320dp | Low | عنوان/أزرار متداخلة | نقل الخروج لورشة الإعدادات | S | موافقة |
-| U-20 | `lib/features/auth/presentation/screens/sign_up_screen.dart:111` | التحقق بيضبط أخطاء لكن مايفتحش أول حقل غلط (تاريخ الميلاد تحت الشاشة) | Low | المستخدم مايشوفش سبب الرفض | `ScrollController.ensureVisible` | S | مفتوح |
+| U-20 | `lib/features/auth/presentation/screens/sign_up_screen.dart:111` | التحقق بيضبط أخطاء لكن مايفتحش أول حقل غلط (تاريخ الميلاد تحت الشاشة) | Low | المستخدم مايشوفش سبب الرفض | `ScrollController.ensureVisible` | S | تم — `13d645d` `GlobalKey` لكل حقول + `ensureVisible` بعد إطار الرسم. الاختبار بيبدأ من أسفل الصفحة وبيثبت أن الـviewport بيرجع لأول حقل غلط |
 | U-21 | `lib/features/chat/conversations_view.dart:82` | نص «مافيش رسايل بعد» بيُستخدم كوصف للمحادثة الفاضية | Low | رسالة مش منطيقة في غير سياقها | مفتاح «لا رسالة» منفصل | S | مرفوض — انظر R-06: النص في مكانه الصحيح |
 | U-22 | `android/app/src/main/res/values/styles.xml:16` | خلفية `NormalTheme` هي `launch_background` الأسود: الانتقال/الاستئناف في الوضع الفاتح يومض أسود (يحتاج تأكيد على جهاز) | Low | ومضة لون أول ثانية | خلفية `?android:colorBackground` في نسخة night | S | تم — `de55439` خلفية النافذة لكل وضع؛ يحتاج تأكيدًا بصريًا على جهاز |
 | C-15 | `lib/core/notifications/chat_notification_service.dart:141,157,419` | إنشاء `ChatRepository()` مباشر بدل مزود Riverpod | Low | مثالين مختلفين لنفس الطبقة | تمرير المزود أو حقن المستودع | S | تم — `1b3066b` المستودع من مزود Riverpod |
@@ -168,7 +168,7 @@ $ flutter analyze
 No issues found!
 
 $ flutter test
-+64: All tests passed!
++67: All tests passed!
 
 $ npm --prefix security-tests test
 76 passed, 0 failed        # firestore.rules + storage.rules على Firebase Emulator
@@ -212,6 +212,6 @@ $ grep -n "matchTextDirection: true" $FLUTTER_SDK/packages/flutter/lib/src/mater
 | 1 تدقيق التصميم و UX | تمت |
 | 2 تدقيق الكود والوظائف والأمان | تمت |
 | 3 التقرير (الملف ده) | تمت |
-| 4 الإصلاحات | تمت للموافق عليه؛ المفتوح الآن: U-05، U-10، U-17، U-18، U-20 + بنود «على موافقتك» |
+| 4 الإصلاحات | تمت لكل بنود المرحلة 4 (آخر خمسة: U-05 `7538adf`، U-18 `e26941e`، U-17 `fc916d7`، U-20 `13d645d`، U-10 `7ce3def`). المتبقي كله بنود «على موافقتك»: U-02، U-09، U-11، U-14، A-03، A-04، A-06 (كامل)، A-07، C-14، Q-02 |
 | 5 استكمال التطبيق | معلّق على موافقاتك في قسم 5 و6 |
-| 6 الفحص النهائي | تمت: analyze نظيف، 64 اختبار Dart، 76 فحص قواعد على المحاكى، APK release مبني |
+| 6 الفحص النهائي | تمت: analyze نظيف، 67 اختبار Dart، 76 فحص قواعد على المحاكى، APK release مبني |

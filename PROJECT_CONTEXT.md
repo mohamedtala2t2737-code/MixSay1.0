@@ -549,7 +549,8 @@ firebase deploy --only functions:sendChatMessageNotification --project ms-chat-b
   المستلم فقط، والحذف للمرسل فقط، وحدود `limit` مطابقة للعميل.
 - اختبارات وحدة وWidget لسياسة الاسم وتسجيل الحساب وأخطاء التحقق وسلوك
   الدردشة (المعرّف الحتمي، الترتيب ودمج الطابور، انتقالات الحالة، الطابور
-  وإعادة المحاولة) — 64 اختبارًا.
+  وإعادة المحاولة)، واختباران لتحمّل التخطيط عند حجم خط نظام كبير (شريط
+  التبويبات وحوار الإعدادات) — 67 اختبارًا.
 - اختبارات قواعد حماية تعمل على Firebase Emulator في `security-tests/` —
   76 فحصًا كلها ناجحة.
 - إعداد Android Firebase للمعرّف `com.ms.socialchat`.
@@ -649,7 +650,7 @@ flutter config --android-sdk="D:\New folder\Android\Sdk"
 سجل التحقق آخر تشغيل على فرع `review/full-audit`:
 
 - `flutter analyze`: لا مشكلات.
-- `flutter test`: 64 اختبارًا، كلها ناجح.
+- `flutter test`: 67 اختبارًا، كلها ناجح.
 - `flutter build apk --release`: ناجح، الناتج
   `build/app/outputs/flutter-apk/app-release.apk` (57.6 MB).
 - `npm --prefix security-tests test`: 76 فحصًا، كلها ناجح.
