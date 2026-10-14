@@ -98,9 +98,9 @@ class _UsernameStepViewState extends State<UsernameStepView> {
         ),
       );
     } else if (_available == true) {
-      suffix = const Icon(Icons.check_circle, color: AppColors.chatGreen);
+      suffix = const Icon(Icons.check_circle, color: AppColors.success);
       helper = s.usernameAvailable;
-      helperColor = AppColors.chatGreen;
+      helperColor = AppColors.success;
     } else if (_available == false) {
       suffix = const Icon(Icons.cancel, color: AppColors.error);
       helper = s.usernameTaken;

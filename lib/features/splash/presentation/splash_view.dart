@@ -20,7 +20,7 @@ class SplashView extends StatelessWidget {
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light,
         child: Material(
-          color: Colors.black,
+          color: AppColors.darkBackground,
           child: SizedBox.expand(
             child: SafeArea(
               child: Column(
@@ -68,7 +68,7 @@ class SplashView extends StatelessWidget {
                   const Text(
                     'M.TalaT',
                     style: TextStyle(
-                      color: Color(0xFF8A8A93),
+                      color: AppColors.textMutedOnDark,
                       fontSize: 14,
                       letterSpacing: 1,
                     ),
@@ -105,16 +105,16 @@ class _LoadingLine extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            const ColoredBox(color: Color(0xFF1C1C24)),
+            const ColoredBox(color: AppColors.darkSurfaceHigh),
             TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: 1),
               duration: duration,
               curve: Curves.easeInOut,
               builder: (context, t, _) => Align(
-                alignment: Alignment.centerLeft,
+                alignment: AlignmentDirectional.centerStart,
                 child: ClipRect(
                   child: Align(
-                    alignment: Alignment.centerLeft,
+                    alignment: AlignmentDirectional.centerStart,
                     widthFactor: t,
                     child: const SizedBox(
                       width: _width,

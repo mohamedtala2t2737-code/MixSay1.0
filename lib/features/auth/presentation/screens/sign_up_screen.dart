@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:social_chat/core/errors/app_exceptions.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
+import 'package:social_chat/core/widgets/app_settings_sheet.dart';
 import 'package:social_chat/core/widgets/app_text_field.dart';
 import 'package:social_chat/core/widgets/mixsay_logo.dart';
 import 'package:social_chat/core/widgets/primary_button.dart';
@@ -205,9 +206,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
       decoration: InputDecoration(
         labelText: label,
         filled: true,
-        fillColor: theme.brightness == Brightness.light
-            ? AppColors.brandFieldFill
-            : const Color(0xFF1C282F),
+        fillColor: AppColors.fieldFill(theme.brightness),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -264,9 +263,9 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                 decoration: InputDecoration(
                   labelText: s.month,
                   filled: true,
-                  fillColor: Theme.of(context).brightness == Brightness.light
-                      ? AppColors.brandFieldFill
-                      : const Color(0xFF1C282F),
+                  fillColor: AppColors.fieldFill(
+                    Theme.of(context).brightness,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -344,7 +343,6 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
     });
 
     return Scaffold(
-      backgroundColor: AppColors.brandCream,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -354,6 +352,10 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: AppSettingsTextButton(),
+                  ),
                   const SizedBox(height: 12),
                   const Center(
                     child: MixSayLogo(

@@ -54,8 +54,8 @@ class _AppTextFieldState extends State<AppTextField> {
     final isLight = theme.brightness == Brightness.light;
     final hasError = widget.errorText != null;
     final placeholder = isLight
-        ? AppColors.brandPlaceholder
-        : AppColors.lightTextMuted;
+        ? AppColors.textMutedOnLight
+        : AppColors.textMutedOnDark;
 
     final field = TextField(
       controller: widget.controller,
@@ -99,7 +99,7 @@ class _AppTextFieldState extends State<AppTextField> {
               )
             : widget.suffix,
         filled: true,
-        fillColor: isLight ? AppColors.brandFieldFill : const Color(0xFF1C282F),
+        fillColor: AppColors.fieldFill(theme.brightness),
         border: InputBorder.none,
         enabledBorder: InputBorder.none,
         focusedBorder: InputBorder.none,

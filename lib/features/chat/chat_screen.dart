@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
@@ -462,7 +463,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
             SafeArea(
               child: Align(
-                alignment: Alignment.topRight,
+                alignment: AlignmentDirectional.topEnd,
                 child: IconButton(
                   onPressed: () => Navigator.of(context).pop(),
                   icon: const Icon(Icons.close, color: Colors.white),
@@ -654,6 +655,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           decoration: InputDecoration(
                             hintText: s.typeMessage,
                             filled: true,
+                            fillColor: AppColors.fieldFill(
+                              Theme.of(context).brightness,
+                            ),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16,
                               vertical: 12,
@@ -722,7 +726,7 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bubbleColor = isOutgoing
-        ? const Color(0xFF25D366)
+        ? AppColors.brandPurple
         : theme.colorScheme.surfaceContainerHighest;
     final textColor = isOutgoing ? Colors.white : theme.colorScheme.onSurface;
     final alignment = isOutgoing
@@ -730,7 +734,9 @@ class _MessageBubble extends StatelessWidget {
         : CrossAxisAlignment.start;
 
     return Align(
-      alignment: isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
+      alignment: isOutgoing
+          ? AlignmentDirectional.centerEnd
+          : AlignmentDirectional.centerStart,
       child: ConstrainedBox(
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.72,
@@ -743,11 +749,11 @@ class _MessageBubble extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: bubbleColor,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isOutgoing ? 16 : 4),
-                  bottomRight: Radius.circular(isOutgoing ? 4 : 16),
+                borderRadius: BorderRadiusDirectional.only(
+                  topStart: const Radius.circular(16),
+                  topEnd: const Radius.circular(16),
+                  bottomStart: Radius.circular(isOutgoing ? 16 : 4),
+                  bottomEnd: Radius.circular(isOutgoing ? 4 : 16),
                 ),
               ),
               child: Column(
@@ -828,9 +834,9 @@ class _MessageBubble extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: EdgeInsets.only(
-                left: isOutgoing ? 0 : 8,
-                right: isOutgoing ? 8 : 0,
+              padding: EdgeInsetsDirectional.only(
+                start: isOutgoing ? 0 : 8,
+                end: isOutgoing ? 8 : 0,
                 bottom: 8,
               ),
               child: Row(
@@ -853,7 +859,7 @@ class _MessageBubble extends StatelessWidget {
                       },
                       size: 15,
                       color: message.status == 'read'
-                          ? Colors.lightBlueAccent
+                          ? AppColors.brandBlue
                           : theme.colorScheme.onSurfaceVariant,
                     ),
                   ],

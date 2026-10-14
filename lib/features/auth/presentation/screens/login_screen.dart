@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:social_chat/core/errors/app_exceptions.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
-import 'package:social_chat/core/theme/app_colors.dart';
+import 'package:social_chat/core/widgets/app_settings_sheet.dart';
 import 'package:social_chat/core/widgets/app_text_field.dart';
 import 'package:social_chat/core/widgets/mixsay_logo.dart';
 import 'package:social_chat/core/widgets/primary_button.dart';
@@ -66,7 +66,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
 
     return Scaffold(
-      backgroundColor: AppColors.brandCream,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -145,8 +144,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       children: [
                         TextSpan(
                           text: s.signUpLink,
-                          style: const TextStyle(
-                            color: AppColors.brandPurple,
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -155,6 +154,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     textAlign: TextAlign.center,
                   ),
                 ),
+                const SizedBox(height: 8),
+                const Center(child: AppSettingsTextButton()),
               ],
             ),
           ),
