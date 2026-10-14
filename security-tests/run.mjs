@@ -914,6 +914,327 @@ await check('a media-only post is accepted, a text-less empty one is not', async
   );
 });
 
+console.log('\ncarousel media (posts.mediaUrls)');
+
+const slides = (count) =>
+  Array.from({ length: count }, (_, index) => `https://example.com/P${index}.jpg`);
+// The rules language has no list macro, so firestore.rules only inspects the
+// count and the first slide; slides 2..10 are checked in FeedRepository.
+const carousel = (urls, mediaType = 'image', mediaUrl = urls[0]) => ({
+  ...postDoc(mediaType, mediaUrl, ''),
+  mediaUrls: urls,
+});
+
+await check('a legacy post that only sets mediaUrl is still accepted', async () => {
+  await assertSucceeds(
+    setDoc(doc(db(ALICE), 'posts', 'legacyPost'), postDoc('image', 'https://example.com/P0.jpg', '')),
+  );
+});
+await check('a carousel of two slides is accepted', async () => {
+  await assertSucceeds(
+    setDoc(doc(db(ALICE), 'posts', 'carouselTwo'), carousel(slides(2))),
+  );
+});
+await check('a carousel of ten slides is accepted', async () => {
+  await assertSucceeds(
+    setDoc(doc(db(ALICE), 'posts', 'carouselTen'), carousel(slides(10))),
+  );
+});
+await check('an eleventh slide is refused', async () => {
+  await assertFails(
+    setDoc(doc(db(ALICE), 'posts', 'carouselEleven'), carousel(slides(11))),
+  );
+});
+await check('an empty carousel is refused', async () => {
+  // mediaUrl stays a real string: the write must fail on the rule, not on
+  // malformed test data.
+  await assertFails(
+    setDoc(
+      doc(db(ALICE), 'posts', 'carouselEmpty'),
+      carousel([], 'image', 'https://example.com/P0.jpg'),
+    ),
+  );
+});
+await check('a first slide that is not a string is refused', async () => {
+  await assertFails(
+    setDoc(
+      doc(db(ALICE), 'posts', 'carouselNumber'),
+      carousel([42], 'image', 42),
+    ),
+  );
+});
+await check('a blank first slide is refused', async () => {
+  await assertFails(
+    setDoc(doc(db(ALICE), 'posts', 'carouselBlank'), carousel([''])),
+  );
+});
+await check('a carousel cannot mix slides with a clip', async () => {
+  await assertFails(
+    setDoc(
+      doc(db(ALICE), 'posts', 'carouselVideoMix'),
+      carousel(slides(2), 'video'),
+    ),
+  );
+});
+await check('a carousel is refused when its first slide is not mediaUrl', async () => {
+  await assertFails(
+    setDoc(
+      doc(db(ALICE), 'posts', 'mismatchedCarousel'),
+      {
+        ...postDoc('image', 'https://example.com/P1.jpg', 'hi'),
+        mediaUrls: ['https://example.com/P2.jpg'],
+      },
+    ),
+  );
+});
+
+console.log('\nstory viewers');
+
+/** A story document, written with the rules off: no client may seed one. */
+async function seedStory(id, authorId) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'stories', id), {
+      authorId,
+      username: authorId,
+      fullName: `Test ${authorId}`,
+      avatarUrl: null,
+      mediaUrl: 'https://example.com/story.jpg',
+      createdAt: Timestamp.now(),
+    });
+  });
+}
+
+/** A post document for the report checks: posts/post1 is deleted earlier. */
+async function seedPost(id, authorId) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'posts', id), {
+      authorId,
+      username: authorId,
+      fullName: `Test ${authorId}`,
+      avatarUrl: null,
+      caption: 'hello',
+      mediaUrl: null,
+      mediaType: 'none',
+      likesCount: 0,
+      commentsCount: 0,
+      createdAt: Timestamp.now(),
+    });
+  });
+}
+
+const view = (viewerId) => ({ userId: viewerId, viewedAt: serverTimestamp() });
+const viewers = (storyId, viewerId) =>
+  doc(db(viewerId), 'stories', storyId, 'viewers', viewerId);
+
+await seedStory('aliceStory', ALICE);
+await seedStory('bobStory', BOB);
+
+await check('a reader records a view on somebody else story', async () => {
+  await assertSucceeds(setDoc(viewers('aliceStory', BOB), view(BOB)));
+});
+await check('nobody records a view on their own story', async () => {
+  await assertFails(setDoc(viewers('aliceStory', ALICE), view(ALICE)));
+});
+await check('a view cannot be written for another account', async () => {
+  await assertFails(
+    setDoc(doc(db(BOB), 'stories', 'aliceStory', 'viewers', ALICE), view(ALICE)),
+  );
+});
+await check('a view written with the device clock is refused', async () => {
+  await assertFails(
+    setDoc(doc(db(MALLORY), 'stories', 'aliceStory', 'viewers', MALLORY), {
+      userId: MALLORY,
+      viewedAt: Timestamp.fromDate(new Date('2020-01-01')),
+    }),
+  );
+});
+await check('a view document has no extra fields', async () => {
+  await assertFails(
+    setDoc(doc(db(ALICE), 'stories', 'bobStory', 'viewers', ALICE), {
+      ...view(ALICE),
+      storyId: 'bobStory',
+    }),
+  );
+});
+await check('a view cannot be edited', async () => {
+  await assertFails(
+    updateDoc(viewers('aliceStory', BOB), { viewedAt: serverTimestamp() }),
+  );
+});
+await check('only the author reads the audience', async () => {
+  await assertSucceeds(
+    getDocs(
+      query(
+        collection(db(ALICE), 'stories', 'aliceStory', 'viewers'),
+        limit(200),
+      ),
+    ),
+  );
+  await assertFails(
+    getDocs(
+      query(
+        collection(db(MALLORY), 'stories', 'aliceStory', 'viewers'),
+        limit(200),
+      ),
+    ),
+  );
+});
+await check('an audience list without a limit is refused', async () => {
+  await assertFails(
+    getDocs(collection(db(ALICE), 'stories', 'aliceStory', 'viewers')),
+  );
+});
+await check('a stranger cannot delete somebody else view', async () => {
+  await assertFails(
+    deleteDoc(doc(db(MALLORY), 'stories', 'aliceStory', 'viewers', BOB)),
+  );
+});
+await check('the author can clear the audience while the story exists', async () => {
+  await assertSucceeds(deleteDoc(doc(db(ALICE), 'stories', 'aliceStory', 'viewers', BOB)));
+});
+await check('deleteStory must clear the audience before the story document', async () => {
+  // The viewer delete rule reads the parent story through get(), so once the
+  // story is gone its audience can never be removed by anybody. This asserts
+  // the order StoryRepository.deleteStory has to keep.
+  await assertSucceeds(setDoc(viewers('bobStory', ALICE), view(ALICE)));
+  await assertSucceeds(deleteDoc(doc(db(BOB), 'stories', 'bobStory')));
+  await assertFails(deleteDoc(doc(db(BOB), 'stories', 'bobStory', 'viewers', ALICE)));
+});
+
+console.log('\nreports');
+
+// A report id is reporter_target, so every case gets its own target: two
+// checks can never collide on one document.
+for (const id of [
+  'spamTarget',
+  'noteTarget',
+  'longNoteTarget',
+  'ownPost',
+  'reasonTarget',
+  'idTarget',
+  'spoofTarget',
+  'twiceTarget',
+]) {
+  await seedPost(id, ALICE);
+}
+
+const report = (reporter, targetId, reason, targetType = 'post', extra) => ({
+  reporterId: reporter,
+  targetType,
+  targetId,
+  reason,
+  createdAt: serverTimestamp(),
+  ...extra,
+});
+const reportRef = (reporter, targetId) =>
+  doc(db(reporter), 'reports', `${reporter}_${targetId}`);
+
+await check('a report about somebody else post is accepted', async () => {
+  await assertSucceeds(
+    setDoc(reportRef(BOB, 'spamTarget'), report(BOB, 'spamTarget', 'spam')),
+  );
+});
+await check('a report is accepted with a valid extra note', async () => {
+  await assertSucceeds(
+    setDoc(
+      reportRef(BOB, 'noteTarget'),
+      report(BOB, 'noteTarget', 'harassment', 'post', {
+        extraNote: 'sent it twice a minute',
+      }),
+    ),
+  );
+});
+await check('a note longer than 300 characters is refused', async () => {
+  await assertFails(
+    setDoc(
+      reportRef(BOB, 'longNoteTarget'),
+      report(BOB, 'longNoteTarget', 'other', 'post', {
+        extraNote: 'a'.repeat(301),
+      }),
+    ),
+  );
+});
+await check('nobody reports their own post', async () => {
+  await assertFails(
+    setDoc(
+      reportRef(ALICE, 'ownPost'),
+      report(ALICE, 'ownPost', 'spam'),
+    ),
+  );
+});
+await check('nobody reports their own story', async () => {
+  await assertFails(
+    setDoc(
+      reportRef(ALICE, 'aliceStory'),
+      report(ALICE, 'aliceStory', 'spam', 'story'),
+    ),
+  );
+});
+await check('a report about a story of somebody else is accepted', async () => {
+  await assertSucceeds(
+    setDoc(
+      reportRef(BOB, 'aliceStory'),
+      report(BOB, 'aliceStory', 'nudity', 'story'),
+    ),
+  );
+});
+await check('a report about a document that does not exist is refused', async () => {
+  await assertFails(
+    setDoc(
+      doc(db(BOB), 'reports', `${BOB}_ghostTarget`),
+      report(BOB, 'ghostTarget', 'other'),
+    ),
+  );
+});
+await check('an unknown report reason is refused', async () => {
+  await assertFails(
+    setDoc(
+      reportRef(BOB, 'reasonTarget'),
+      report(BOB, 'reasonTarget', 'rude'),
+    ),
+  );
+});
+await check('a report id that is not reporter_target is refused', async () => {
+  await assertFails(
+    setDoc(
+      doc(db(BOB), 'reports', `${BOB}_notTheTarget`),
+      report(BOB, 'idTarget', 'spam'),
+    ),
+  );
+});
+await check('a report cannot name another reporter', async () => {
+  await assertFails(
+    setDoc(
+      reportRef(BOB, 'spoofTarget'),
+      report(BOB, 'spoofTarget', 'spam', 'post', { reporterId: MALLORY }),
+    ),
+  );
+});
+await check('a client can neither read nor list reports', async () => {
+  await assertFails(getDoc(reportRef(ALICE, 'spamTarget')));
+  await assertFails(getDocs(collection(db(ALICE), 'reports')));
+});
+await check('reporting the same target twice is refused', async () => {
+  await assertSucceeds(
+    setDoc(
+      reportRef(BOB, 'twiceTarget'),
+      report(BOB, 'twiceTarget', 'spam'),
+    ),
+  );
+  await assertFails(
+    setDoc(
+      reportRef(BOB, 'twiceTarget'),
+      report(BOB, 'twiceTarget', 'violence'),
+    ),
+  );
+});
+await check('a report cannot be edited or deleted', async () => {
+  await assertFails(
+    updateDoc(reportRef(BOB, 'spamTarget'), { reason: 'other' }),
+  );
+  await assertFails(deleteDoc(reportRef(BOB, 'spamTarget')));
+});
+
 await testEnv.cleanup();
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

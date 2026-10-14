@@ -399,6 +399,7 @@ service cloud.firestore {
           'avatarUrl',
           'caption',
           'mediaUrl',
+          'mediaUrls',
           'mediaType',
           'likesCount',
           'commentsCount',
@@ -411,6 +412,29 @@ service cloud.firestore {
           || request.resource.data.mediaUrl == null
         )
         && request.resource.data.mediaType in ['none', 'image', 'video']
+        // Carousel media. Optional: posts written before it exist carry only
+        // mediaUrl, and hasOnly never requires a key to be present.
+        // The rules language has no list macro (`.all(...)` fails to compile in
+        // the emulator), so only the first slide and the count are checked here
+        // and FeedRepository validates every slide before it writes. The order
+        // of these clauses matters: size() >= 1 must short-circuit before the
+        // [0] lookups or an empty list becomes an evaluation error.
+        && (
+          !('mediaUrls' in request.resource.data)
+          || (
+            request.resource.data.mediaUrls is list
+            && request.resource.data.mediaUrls.size() >= 1
+            && request.resource.data.mediaUrls.size() <= 10
+            && request.resource.data.mediaUrls[0] is string
+            && request.resource.data.mediaUrls[0].size() > 0
+            // Images never mix with a clip inside one post.
+            && request.resource.data.mediaType == 'image'
+            // The legacy pointer keeps naming the first slide, so readers that
+            // only know mediaUrl still show a real image.
+            && request.resource.data.mediaUrl
+              == request.resource.data.mediaUrls[0]
+          )
+        )
         && request.resource.data.likesCount == 0
         && request.resource.data.commentsCount == 0
         && request.resource.data.createdAt == request.time
@@ -494,6 +518,12 @@ service cloud.firestore {
     // A story expires 24h after createdAt. Clients may only ever read it
     // forward in time because createdAt is pinned to request.time, so a fake
     // device clock cannot revive an old story or push one past the window.
+    function storyAuthor(storyId) {
+      return get(
+        /databases/$(database)/documents/stories/$(storyId)
+      ).data.authorId;
+    }
+
     match /stories/{storyId} {
       allow get: if verifiedUser();
       // StoryRepository queries with limit(60); this blocks bulk scraping.
@@ -520,6 +550,89 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if verifiedUser()
         && resource.data.authorId == request.auth.uid;
+
+      // Who watched one of my stories. `storyAuthor` reads the parent document,
+      // so StoryRepository.deleteStory must clear the audience while the story
+      // still exists: after the parent is gone every viewer write is refused.
+      match /viewers/{viewerId} {
+        allow create: if verifiedUser()
+          && request.auth.uid == viewerId
+          && request.auth.uid != storyAuthor(storyId)
+          && request.resource.data.keys().hasOnly(['userId', 'viewedAt'])
+          && request.resource.data.userId == viewerId
+          && request.resource.data.viewedAt == request.time;
+        // Only the author reads their audience, and always with limit(200).
+        allow get: if verifiedUser()
+          && request.auth.uid == storyAuthor(storyId);
+        allow list: if verifiedUser()
+          && request.auth.uid == storyAuthor(storyId)
+          && request.query.limit <= 200;
+        allow delete: if verifiedUser()
+          && request.auth.uid == storyAuthor(storyId);
+        allow update: if false;
+      }
+    }
+
+    // ---------------------------------------------------------------- reports
+    // Write-only from the app: a report is read in the Firebase console or by a
+    // Cloud Function, never by a client. The document id is derived from the
+    // reporter and the target, so tapping report twice on the same thing is an
+    // impossible write instead of a flood of documents.
+    match /reports/{reportId} {
+      allow read, update, delete: if false;
+
+      allow create: if verifiedUser()
+        && reportId == request.auth.uid + '_' + request.resource.data.targetId
+        && request.resource.data.keys().hasOnly([
+          'reporterId',
+          'targetType',
+          'targetId',
+          'reason',
+          'extraNote',
+          'createdAt'
+        ])
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.targetType in ['post', 'story']
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.targetId.size() <= 60
+        // The sheet offers exactly these reasons, and nothing else.
+        && request.resource.data.reason in [
+          'spam',
+          'harassment',
+          'nudity',
+          'violence',
+          'misinformation',
+          'other'
+        ]
+        && (
+          !('extraNote' in request.resource.data)
+          || (
+            request.resource.data.extraNote is string
+            && request.resource.data.extraNote.size() <= 300
+          )
+        )
+        // The target must exist, and nobody may report their own content: get()
+        // on a missing document yields no authorId, so both cases fall here.
+        && (
+          (
+            request.resource.data.targetType == 'post'
+            && get(
+              /databases/$(database)/documents/posts/$(
+                request.resource.data.targetId
+              )
+            ).data.authorId != request.auth.uid
+          )
+          || (
+            request.resource.data.targetType == 'story'
+            && get(
+              /databases/$(database)/documents/stories/$(
+                request.resource.data.targetId
+              )
+            ).data.authorId != request.auth.uid
+          )
+        )
+        && request.resource.data.createdAt == request.time;
     }
 
     // --------------------------------------------------------- notifications
