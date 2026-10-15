@@ -241,13 +241,13 @@ class AppStrings {
       isArabic ? 'حذف لدى الجميع' : 'Delete for everyone';
   String get messageDeleted =>
       isArabic ? 'الرسالة دي اتحذفت' : 'This message was deleted';
-  String replyingTo(String name) => isArabic ? 'رد على $name' : 'Reply to $name';
+  String replyingTo(String name) =>
+      isArabic ? 'رد على $name' : 'Reply to $name';
   String get offlineBanner => isArabic
       ? 'مفيش إنترنت. الرسائل هتتبعت لما الشبكة ترجع.'
       : 'No internet. Messages will send when the connection is back.';
-  String get userUnavailable => isArabic
-      ? 'الحساب ده بقى محذوف'
-      : 'This account is no longer available';
+  String get userUnavailable =>
+      isArabic ? 'الحساب ده بقى محذوف' : 'This account is no longer available';
   String get emoji => isArabic ? 'إيموجي' : 'Emoji';
   String get youLabel => isArabic ? 'أنت' : 'You';
 
@@ -259,6 +259,26 @@ class AppStrings {
   String get chatPreviewSticker => isArabic ? 'ملصق' : 'Sticker';
   String get chatPreviewGif => isArabic ? 'صورة متحركة' : 'GIF';
   String get chatPreviewMessage => isArabic ? 'رسالة' : 'Message';
+
+  // ---------- chat attachments that cannot be sent ----------
+  /// The ceiling for one kind of attachment, spoken in the unit it is set in so
+  /// the user knows what to shrink. 900 KB stays kilobytes; anything bigger is
+  /// read as megabytes with Arabic-Indic digits.
+  String chatSizeLimit(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      final megabytes = (bytes / (1024 * 1024)).round();
+      return isArabic ? '${number(megabytes)} ميجا' : '$megabytes MB';
+    }
+    final kilobytes = (bytes / 1024).round();
+    return isArabic ? '${number(kilobytes)} كيلو' : '$kilobytes KB';
+  }
+
+  String chatAttachmentTooLarge(String limit) => isArabic
+      ? 'الملف أكبر من $limit. اختار ملف أصغر.'
+      : 'That file is larger than $limit. Pick a smaller one.';
+  String get chatAttachmentUnusable => isArabic
+      ? 'الملف ده مش سليم. جرّب ملف تاني.'
+      : 'That file cannot be sent. Try another one.';
 
   String get startConversation => isArabic
       ? 'ابدأ محادثة مع أي شخص من حسابه أو البحث.'

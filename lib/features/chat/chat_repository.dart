@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -8,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:social_chat/core/config/chat_features.dart';
+import 'package:social_chat/features/chat/chat_media.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/pending_queue_service.dart';
 
@@ -25,6 +27,31 @@ class ActiveChatState {
     final index = _openConversations.lastIndexOf(conversationId);
     if (index >= 0) _openConversations.removeAt(index);
   }
+}
+
+/// Lets the sender walk away from an upload that is already running.
+///
+/// [cancel] before the transfer starts still cancels it: the task is handed to
+/// [attach] the moment Storage accepts it, and a request that arrived earlier
+/// is applied there. Without that, a cancel pressed while the file was still
+/// opening would do nothing and the bytes would travel anyway.
+class ChatUploadController {
+  UploadTask? _task;
+  bool _cancelRequested = false;
+
+  bool get isCancelled => _cancelRequested;
+
+  void cancel() {
+    _cancelRequested = true;
+    _task?.cancel();
+  }
+
+  void attach(UploadTask task) {
+    _task = task;
+    if (_cancelRequested) task.cancel();
+  }
+
+  void detach() => _task = null;
 }
 
 class ChatConversationPreview {
@@ -176,6 +203,10 @@ class ChatMessage {
   final String content;
   final String? mediaPath;
   final String? clientId;
+
+  /// The file on this device for a message still sitting in the offline queue,
+  /// whatever it carries: a photo, a video, a voice note or a document. Once
+  /// the upload succeeds the bubble reads [mediaPath] instead.
   final String? localImagePath;
   final QueryDocumentSnapshot<Map<String, dynamic>>? documentSnapshot;
   final DateTime createdAt;
@@ -240,18 +271,36 @@ class ChatMessage {
     );
   }
 
-  factory ChatMessage.fromPending(Map<String, dynamic> entry) => ChatMessage(
-    id: 'pending-${entry['client_id']}',
-    conversationId: entry['conversation_id'] as String,
-    senderId: entry['sender_id'] as String,
-    content: entry['content'] as String? ?? '',
-    mediaPath: entry['local_image_path'] as String?,
-    clientId: entry['client_id'] as String,
-    localImagePath: entry['local_image_path'] as String?,
-    createdAt: DateTime.parse(entry['created_at'] as String),
-    status: entry['state'] as String? ?? 'sending',
-    replyTo: ChatReply.fromData(entry['reply_to'] as Map<String, dynamic>?),
-  );
+  factory ChatMessage.fromPending(Map<String, dynamic> entry) {
+    final attachment = ChatAttachmentDraft.fromQueueFields(entry);
+    // A queued upload still has to reach Storage, so the bubble shows the file
+    // on this device. A GIF carries the public url it will be written with.
+    final localPath = attachment != null && attachment.needsUpload
+        ? attachment.localPath
+        : null;
+    return ChatMessage(
+      id: 'pending-${entry['client_id']}',
+      conversationId: entry['conversation_id'] as String,
+      senderId: entry['sender_id'] as String,
+      content: entry['content'] as String? ?? '',
+      mediaPath: localPath ?? attachment?.localPath,
+      clientId: entry['client_id'] as String,
+      localImagePath: localPath,
+      createdAt: DateTime.parse(entry['created_at'] as String),
+      status: entry['state'] as String? ?? 'sending',
+      type: attachment?.type ?? ChatMessageType.text,
+      // Only a document is named to the receiver; a photo keeps its random
+      // staging name, which would show up as a meaningless label.
+      fileName: attachment?.type == ChatMessageType.file
+          ? attachment?.fileName
+          : null,
+      fileSize: attachment == null || attachment.byteSize <= 0
+          ? null
+          : attachment.byteSize,
+      durationMs: attachment?.durationMs,
+      replyTo: ChatReply.fromData(entry['reply_to'] as Map<String, dynamic>?),
+    );
+  }
 
   /// Firestore documents written before this version of the rules only carry
   /// the legacy fields, so a media message with no `type` still needs the right
@@ -731,33 +780,62 @@ class ChatRepository {
     );
   }
 
-  Future<ChatMessage> sendImage({
+  /// Uploads [draft] and writes the message that points at the uploaded
+  /// object, or at the draft's own url when the type needs no upload.
+  ///
+  /// [onProgress] receives 0..1 while the file travels and [controller] can
+  /// abort a running upload. Anything that fails after the upload — a write the
+  /// rules refuse included — deletes the object again, so an abandoned send
+  /// leaves no billable file behind.
+  Future<ChatMessage> sendMedia({
     required String conversationId,
-    required Uint8List bytes,
+    required ChatAttachmentDraft draft,
     required String clientId,
     ChatReply? replyTo,
+    ChatUploadController? controller,
+    void Function(double fraction)? onProgress,
   }) async {
-    final senderId = _me;
-    final path = 'chats/$conversationId/$senderId/$clientId.jpg';
-    final imageReference = _storage.ref(path);
-    try {
-      await imageReference.putData(
-        bytes,
-        SettableMetadata(contentType: 'image/jpeg'),
+    final sized = await draft.withMeasuredSize();
+    final rejection = chatMediaRejection(sized);
+    if (rejection != null) throw rejection;
+    if (!sized.needsUpload) {
+      return _insertMessage(
+        conversationId: conversationId,
+        clientId: clientId,
+        content: sized.caption ?? '',
+        type: sized.type,
+        mediaPath: sized.localPath,
+        replyTo: replyTo,
       );
+    }
+    final senderId = _me;
+    final path = sized.storagePath(
+      conversationId: conversationId,
+      senderId: senderId,
+      clientId: clientId,
+    );
+    final reference = _storage.ref(path);
+    try {
+      await _upload(reference, sized, controller, onProgress);
       return await _insertMessage(
         conversationId: conversationId,
         clientId: clientId,
-        type: ChatMessageType.image,
+        content: sized.caption ?? '',
+        type: sized.type,
         mediaPath: path,
+        // Only a document is named to the receiver; a photo's staging name
+        // would read as noise under the bubble.
+        fileName: sized.type == ChatMessageType.file ? sized.fileName : null,
+        fileSize: sized.byteSize,
+        durationMs: _durationWithinRules(sized.durationMs),
         replyTo: replyTo,
       );
     } catch (error, stackTrace) {
       try {
-        await imageReference.delete();
+        await reference.delete();
       } catch (cleanupError, cleanupStackTrace) {
         _logFailure(
-          'remove an unreferenced uploaded chat image',
+          'remove an unreferenced uploaded chat attachment',
           cleanupError,
           cleanupStackTrace,
         );
@@ -765,6 +843,44 @@ class ChatRepository {
       Error.throwWithStackTrace(error, stackTrace);
     }
   }
+
+  /// Runs the upload to completion, reporting progress when the caller wants
+  /// it. Cancelling makes `await task` throw, so the caller's cleanup runs and
+  /// no message is written for half-travelled bytes.
+  Future<void> _upload(
+    Reference reference,
+    ChatAttachmentDraft draft,
+    ChatUploadController? controller,
+    void Function(double fraction)? onProgress,
+  ) async {
+    final task = reference.putFile(
+      File(draft.localPath),
+      SettableMetadata(contentType: draft.contentType),
+    );
+    controller?.attach(task);
+    StreamSubscription<TaskSnapshot>? progress;
+    try {
+      if (onProgress != null) {
+        progress = task.snapshotEvents.listen((snapshot) {
+          if (snapshot.totalBytes <= 0) return;
+          onProgress(
+            (snapshot.bytesTransferred / snapshot.totalBytes).clamp(0.0, 1.0),
+          );
+        });
+      }
+      await task;
+    } finally {
+      await progress?.cancel();
+      controller?.detach();
+    }
+  }
+
+  /// `firestore.rules` refuses a `durationMs` above ten minutes, so a longer
+  /// clip is sent without the label instead of being denied outright.
+  static int? _durationWithinRules(int? durationMs) =>
+      durationMs != null && durationMs <= chatMediaMaxDurationMs
+      ? durationMs
+      : null;
 
   Future<String> getImageUrl(String pathOrUrl) {
     final uri = Uri.tryParse(pathOrUrl);
@@ -780,18 +896,28 @@ class ChatRepository {
     required String conversationId,
     required String text,
     required String clientId,
+    ChatAttachmentDraft? attachment,
     ChatReply? replyTo,
   }) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) throw StateError('Message cannot be empty');
-    final createdAt = DateTime.now().toUtc();
+    if (trimmed.isEmpty && attachment == null) {
+      throw StateError('Message cannot be empty');
+    }
+    final staged = attachment == null
+        ? null
+        : await _stage(attachment.copyWith(caption: trimmed), clientId);
+    if (staged != null) {
+      final rejection = chatMediaRejection(staged);
+      if (rejection != null) throw rejection;
+    }
     final entry = <String, dynamic>{
       'client_id': clientId,
       'conversation_id': conversationId,
       'sender_id': _me,
       'content': trimmed,
-      'created_at': createdAt.toIso8601String(),
+      'created_at': DateTime.now().toUtc().toIso8601String(),
       'state': 'queued',
+      if (staged != null) ...staged.toQueueFields(),
       // The quote travels with the queued send, so a reply typed offline still
       // arrives as a reply once the network comes back.
       if (replyTo != null) 'reply_to': replyTo.toMap(),
@@ -800,27 +926,28 @@ class ChatRepository {
     return ChatMessage.fromPending(entry);
   }
 
-  Future<ChatMessage> queueImage({
-    required String conversationId,
-    required Uint8List bytes,
-    required String clientId,
-  }) async {
-    final directory = await getApplicationSupportDirectory();
-    final pendingDirectory = Directory('${directory.path}/pending-chat');
+  /// Copies a picked attachment into the pending folder so a restart still
+  /// finds it, and returns the draft that points at the copy. A queued GIF has
+  /// no file to keep and comes back untouched.
+  Future<ChatAttachmentDraft> _stage(
+    ChatAttachmentDraft draft,
+    String clientId,
+  ) async {
+    if (!draft.needsUpload) return draft;
+    final supportDirectory = await getApplicationSupportDirectory();
+    final pendingDirectory = Directory('${supportDirectory.path}/pending-chat');
     await pendingDirectory.create(recursive: true);
-    final imageFile = File('${pendingDirectory.path}/$clientId.jpg');
-    await imageFile.writeAsBytes(bytes, flush: true);
-
-    final entry = <String, dynamic>{
-      'client_id': clientId,
-      'conversation_id': conversationId,
-      'sender_id': _me,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-      'local_image_path': imageFile.path,
-      'state': 'queued',
-    };
-    await _pendingQueue.enqueue(entry);
-    return ChatMessage.fromPending(entry);
+    final target = File(
+      '${pendingDirectory.path}/${draft.storageObjectName(clientId)}',
+    );
+    final source = File(draft.localPath);
+    if (source.path != target.path) {
+      await source.copy(target.path);
+    }
+    return draft.copyWith(
+      localPath: target.path,
+      byteSize: await target.length(),
+    );
   }
 
   Future<List<ChatMessage>> getPendingMessages(String conversationId) async {
@@ -837,7 +964,7 @@ class ChatRepository {
 
   Future<List<ChatMessage>> flushPendingMessages() async {
     final userId = _me;
-    await _pendingQueue.cleanupOrphanedImages();
+    await _pendingQueue.cleanupOrphanedFiles();
     return _pendingQueue.runExclusive((transaction) async {
       final sent = <ChatMessage>[];
       for (var index = 0; index < transaction.entries.length; index++) {
@@ -847,40 +974,32 @@ class ChatRepository {
         entry.remove('next_attempt_at');
         await transaction.save();
 
+        ChatAttachmentDraft? draft;
         try {
           final conversationId = entry['conversation_id'] as String;
           final clientId = entry['client_id'] as String;
-          final imagePath = entry['local_image_path'] as String?;
-          final message = imagePath == null
+          final replyTo = ChatReply.fromData(
+            entry['reply_to'] as Map<String, dynamic>?,
+          );
+          draft = ChatAttachmentDraft.fromQueueFields(entry);
+          final message = draft == null
               ? await _insertMessage(
                   conversationId: conversationId,
                   clientId: clientId,
                   content: entry['content'] as String? ?? '',
-                  replyTo: ChatReply.fromData(
-                    entry['reply_to'] as Map<String, dynamic>?,
-                  ),
+                  replyTo: replyTo,
                 )
-              : await sendImage(
+              : await sendMedia(
                   conversationId: conversationId,
-                  bytes: await File(imagePath).readAsBytes(),
+                  draft: draft,
                   clientId: clientId,
+                  replyTo: replyTo,
                 );
           sent.add(message);
           transaction.entries.removeAt(index);
           index--;
           await transaction.save();
-          if (imagePath != null) {
-            try {
-              final file = File(imagePath);
-              if (await file.exists()) await file.delete();
-            } catch (error, stackTrace) {
-              _logFailure(
-                'delete an uploaded pending chat image',
-                error,
-                stackTrace,
-              );
-            }
-          }
+          await _deleteStagedFile(draft);
         } catch (error, stackTrace) {
           _logFailure('flush a queued chat message', error, stackTrace);
           final failure = classifyPendingQueueFailure(error);
@@ -900,6 +1019,23 @@ class ChatRepository {
       }
       return sent;
     });
+  }
+
+  /// Removes the private copy the queue kept for an upload that is now either
+  /// sent or doomed. The original photo in the gallery is never touched.
+  Future<void> _deleteStagedFile(ChatAttachmentDraft? draft) async {
+    final path = draft?.localPath;
+    if (path == null || !draft!.needsUpload) return;
+    try {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (error, stackTrace) {
+      _logFailure(
+        'delete an uploaded pending chat attachment',
+        error,
+        stackTrace,
+      );
+    }
   }
 
   Future<List<ChatMessage>> retryPendingMessage(String clientId) async {

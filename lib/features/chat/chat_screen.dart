@@ -12,6 +12,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:social_chat/core/config/chat_features.dart';
 import 'package:social_chat/core/errors/app_exceptions.dart';
@@ -21,7 +22,9 @@ import 'package:social_chat/core/widgets/app_list_tile.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/chat/chat_emoji_picker.dart';
+import 'package:social_chat/features/chat/chat_media.dart';
 import 'package:social_chat/features/chat/chat_message_bubble.dart';
+import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
 import 'package:social_chat/features/chat/chat_time_labels.dart';
@@ -292,49 +295,42 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Future<void> _sendImage() async {
     if (_sending) return;
-    final image = await _imagePicker.pickImage(source: ImageSource.gallery);
-    if (image == null || !mounted) return;
+    final picked = await _imagePicker.pickImage(source: ImageSource.gallery);
+    if (picked == null || !mounted) return;
 
     setState(() => _sending = true);
     final repository = ref.read(chatRepositoryProvider);
     final clientId = repository.createClientId();
-    Uint8List? compressedBytes;
+    ChatAttachmentDraft? draft;
     try {
-      final compressed = await FlutterImageCompress.compressWithFile(
-        image.path,
-        minWidth: 1600,
-        minHeight: 1600,
-        quality: 78,
-        format: CompressFormat.jpeg,
-      );
-      if (compressed == null || compressed.isEmpty) {
-        throw StateError('Image compression failed');
-      }
-      compressedBytes = compressed;
+      draft = await _compressedPhoto(picked, clientId);
       final connected = await _hasNetworkConnection();
       final message = connected
-          ? await repository.sendImage(
+          ? await repository.sendMedia(
               conversationId: widget.conversationId,
-              bytes: compressed,
+              draft: draft,
               clientId: clientId,
             )
-          : await repository.queueImage(
+          : await repository.queueMessage(
               conversationId: widget.conversationId,
-              bytes: compressed,
+              text: '',
               clientId: clientId,
+              attachment: draft,
             );
       if (!mounted) return;
       _insertOrReplaceMessage(message);
       setState(() => _sending = false);
       _scrollToBottom();
     } catch (error) {
-      if (compressedBytes != null &&
+      final staged = draft;
+      if (staged != null &&
           (_isNetworkFailure(error) || !await _hasNetworkConnection())) {
         try {
-          final pending = await repository.queueImage(
+          final pending = await repository.queueMessage(
             conversationId: widget.conversationId,
-            bytes: compressedBytes,
+            text: '',
             clientId: clientId,
+            attachment: staged,
           );
           if (!mounted) return;
           _insertOrReplaceMessage(pending);
@@ -342,19 +338,59 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           _scrollToBottom();
           return;
         } catch (queueError, stackTrace) {
-          debugPrint('Unable to queue chat image: $queueError');
+          debugPrint('Unable to queue chat attachment: $queueError');
           debugPrintStack(stackTrace: stackTrace);
         }
       }
-      debugPrint('Unable to send chat image: $error');
+      debugPrint('Unable to send chat attachment: $error');
       if (!mounted) return;
       setState(() => _sending = false);
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          SnackBar(content: Text(AppStrings.of(context).actionFailed)),
+          SnackBar(content: Text(_attachmentFailureMessage(error))),
         );
     }
+  }
+
+  /// Shrinks a picked photo to the ceiling a chat upload gets and keeps it in
+  /// the app's own temporary folder, where the offline queue can copy it.
+  Future<ChatAttachmentDraft> _compressedPhoto(
+    XFile picked,
+    String clientId,
+  ) async {
+    final directory = await getTemporaryDirectory();
+    final compressed = await FlutterImageCompress.compressAndGetFile(
+      picked.path,
+      '${directory.path}/$clientId.jpg',
+      minWidth: 1600,
+      minHeight: 1600,
+      quality: 78,
+      format: CompressFormat.jpeg,
+    );
+    if (compressed == null) throw StateError('Image compression failed');
+    final file = File(compressed.path);
+    return ChatAttachmentDraft(
+      type: ChatMessageType.image,
+      localPath: file.path,
+      fileName: '$clientId.jpg',
+      byteSize: await file.length(),
+    );
+  }
+
+  /// Why an attachment did not go out, in the user's language. A file over the
+  /// ceiling gets the number it exceeded, because "it failed" would only make
+  /// the user pick the same photo again.
+  String _attachmentFailureMessage(Object error) {
+    final s = AppStrings.of(context);
+    if (error is ChatAttachmentRejectedException) {
+      final limit = error.limitBytes;
+      if (error.reason == 'tooLarge' && limit != null) {
+        return s.chatAttachmentTooLarge(s.chatSizeLimit(limit));
+      }
+      return s.chatAttachmentUnusable;
+    }
+    return s.actionFailed;
   }
 
   void _subscribeToMessages() {
