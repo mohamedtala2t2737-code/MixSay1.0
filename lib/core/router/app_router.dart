@@ -12,7 +12,10 @@ import 'package:social_chat/features/auth/presentation/screens/sign_up_screen.da
 import 'package:social_chat/features/chat/chat_screen.dart';
 import 'package:social_chat/features/chat/conversations_screen.dart';
 import 'package:social_chat/features/home/presentation/main_shell.dart';
+import 'package:social_chat/features/notifications/presentation/notifications_screen.dart';
 import 'package:social_chat/features/profile/presentation/follow_graph_screen.dart';
+import 'package:social_chat/features/profile/presentation/saved_posts_screen.dart';
+import 'package:social_chat/features/profile/presentation/settings_screen.dart';
 import 'package:social_chat/features/search/presentation/search_screen.dart';
 
 /// Rebuilds the router whenever the Firebase auth state changes,
@@ -55,6 +58,7 @@ final appRouter = GoRouter(
         const [
           '/conversations',
           '/search',
+          '/settings',
           '/followers',
           '/following',
         ].any(
@@ -89,6 +93,18 @@ final appRouter = GoRouter(
       path: '/chat/:conversationId',
       builder: (context, state) =>
           ChatScreen(conversationId: state.pathParameters['conversationId']!),
+    ),
+    GoRoute(
+      path: '/settings',
+      builder: (context, state) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/settings/saved',
+      builder: (context, state) => const SavedPostsScreen(),
+    ),
+    GoRoute(
+      path: '/settings/notifications',
+      builder: (context, state) => const NotificationsScreen(),
     ),
     GoRoute(
       path: '/followers',
