@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:social_chat/core/config/chat_features.dart';
@@ -820,15 +821,43 @@ class ChatRepository {
       senderId: senderId,
       clientId: clientId,
     );
+    final poster = sized.thumbnailPath;
+    final posterPath = poster == null
+        ? null
+        : sized.thumbnailStoragePath(
+            conversationId: conversationId,
+            senderId: senderId,
+            clientId: clientId,
+          );
     final reference = _storage.ref(path);
+    final posterReference = posterPath == null
+        ? null
+        : _storage.ref(posterPath);
     try {
-      await _upload(reference, sized, controller, onProgress);
+      await _upload(
+        reference,
+        file: File(sized.localPath),
+        contentType: sized.contentType,
+        controller: controller,
+        onProgress: onProgress,
+      );
+      if (poster != null && posterReference != null) {
+        // The poster is a few dozen kilobytes, so it gets no separate progress
+        // of its own; it does share the cancel button with the clip.
+        await _upload(
+          posterReference,
+          file: File(poster),
+          contentType: chatMediaThumbnailContentType,
+          controller: controller,
+        );
+      }
       return await _insertMessage(
         conversationId: conversationId,
         clientId: clientId,
         content: sized.caption ?? '',
         type: sized.type,
         mediaPath: path,
+        thumbUrl: posterPath,
         // Only a document is named to the receiver; a photo's staging name
         // would read as noise under the bubble.
         fileName: sized.type == ChatMessageType.file ? sized.fileName : null,
@@ -837,16 +866,27 @@ class ChatRepository {
         replyTo: replyTo,
       );
     } catch (error, stackTrace) {
-      try {
-        await reference.delete();
-      } catch (cleanupError, cleanupStackTrace) {
-        _logFailure(
-          'remove an unreferenced uploaded chat attachment',
-          cleanupError,
-          cleanupStackTrace,
-        );
+      await _discardUpload(reference, sized.type);
+      final posterUpload = posterReference;
+      if (posterUpload != null) {
+        await _discardUpload(posterUpload, ChatMessageType.image);
       }
       Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  /// Removes an object that no message ended up pointing at. The removal is
+  /// best effort: the send already failed, and a second failure here must not
+  /// replace the reason the user was about to be told.
+  Future<void> _discardUpload(Reference reference, ChatMessageType type) async {
+    try {
+      await reference.delete();
+    } catch (cleanupError, cleanupStackTrace) {
+      _logFailure(
+        'remove an unreferenced uploaded chat ${type.wireValue}',
+        cleanupError,
+        cleanupStackTrace,
+      );
     }
   }
 
@@ -854,14 +894,15 @@ class ChatRepository {
   /// it. Cancelling makes `await task` throw, so the caller's cleanup runs and
   /// no message is written for half-travelled bytes.
   Future<void> _upload(
-    Reference reference,
-    ChatAttachmentDraft draft,
+    Reference reference, {
+    required File file,
+    required String contentType,
     ChatUploadController? controller,
     void Function(double fraction)? onProgress,
-  ) async {
+  }) async {
     final task = reference.putFile(
-      File(draft.localPath),
-      SettableMetadata(contentType: draft.contentType),
+      file,
+      SettableMetadata(contentType: contentType),
     );
     controller?.attach(task);
     StreamSubscription<TaskSnapshot>? progress;
@@ -888,7 +929,9 @@ class ChatRepository {
       ? durationMs
       : null;
 
-  Future<String> getImageUrl(String pathOrUrl) {
+  /// The url a bubble or a player uses for a Storage object — or the object
+  /// itself when the sender wrote a public url, which is what a GIF does.
+  Future<String> getMediaUrl(String pathOrUrl) {
     final uri = Uri.tryParse(pathOrUrl);
     if (uri != null &&
         (uri.scheme == 'https' || uri.scheme == 'http') &&
@@ -896,6 +939,74 @@ class ChatRepository {
       return Future.value(pathOrUrl);
     }
     return _storage.ref(pathOrUrl).getDownloadURL();
+  }
+
+  /// Brings a received attachment down to this device and returns the path it
+  /// landed on, so a document can be opened in another app and a clip can be
+  /// replayed without spending a download on every scroll.
+  ///
+  /// The file lives in the app's own folder under the sender's object name,
+  /// which is unique per message, so the same message tapped twice reuses what
+  /// is already there instead of travelling the bytes again.
+  Future<String> saveMediaToFile({
+    required String mediaPath,
+    required String fileName,
+    void Function(double fraction)? onProgress,
+  }) async {
+    final url = await getMediaUrl(mediaPath);
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasAbsolutePath) {
+      throw StateError('Nothing to download at $mediaPath');
+    }
+    final supportDirectory = await getApplicationSupportDirectory();
+    final folder =
+        '${supportDirectory.path}/chat-media/'
+        '${mediaPath.split('/').last}';
+    final target = File('$folder/${chatSafeReceivedName(fileName)}');
+    if (await target.exists() && await target.length() > 0) {
+      onProgress?.call(1);
+      return target.path;
+    }
+    await target.parent.create(recursive: true);
+    return _writeDownload(uri, target, onProgress);
+  }
+
+  Future<String> _writeDownload(
+    Uri uri,
+    File target,
+    void Function(double fraction)? onProgress,
+  ) async {
+    final client = http.Client();
+    try {
+      final response = await client.send(http.Request('GET', uri));
+      if (response.statusCode != 200) {
+        await response.stream.drain<void>();
+        throw StateError('Download failed with code ${response.statusCode}');
+      }
+      final total = response.contentLength;
+      final sink = target.openWrite();
+      var received = 0;
+      try {
+        await for (final chunk in response.stream) {
+          sink.add(chunk);
+          received += chunk.length;
+          if (onProgress != null && total != null && total > 0) {
+            onProgress((received / total).clamp(0.0, 1.0));
+          }
+        }
+      } finally {
+        await sink.close();
+      }
+      return target.path;
+    } catch (error) {
+      // A half-written file opens as garbage in another app, so it goes.
+      try {
+        if (await target.exists()) await target.delete();
+      } catch (_) {}
+      Error.throwWithStackTrace(error, StackTrace.current);
+    } finally {
+      client.close();
+    }
   }
 
   Future<ChatMessage> queueMessage({
@@ -949,14 +1060,29 @@ class ChatRepository {
     final target = File(
       '${pendingDirectory.path}/${draft.storageObjectName(clientId)}',
     );
-    final source = File(draft.localPath);
-    if (source.path != target.path) {
-      await source.copy(target.path);
+    await _copyInto(target, File(draft.localPath));
+    final poster = draft.thumbnailPath;
+    String? stagedPoster;
+    if (poster != null) {
+      // The poster travels with the clip, so a video queued without a network
+      // still arrives with a picture once the bytes can move.
+      final posterTarget = File(
+        '${pendingDirectory.path}/'
+        '$clientId$chatMediaThumbnailSuffix.jpg',
+      );
+      await _copyInto(posterTarget, File(poster));
+      stagedPoster = posterTarget.path;
     }
     return draft.copyWith(
       localPath: target.path,
       byteSize: await target.length(),
+      thumbnailPath: stagedPoster,
     );
+  }
+
+  Future<void> _copyInto(File target, File source) async {
+    if (source.path == target.path) return;
+    await source.copy(target.path);
   }
 
   Future<List<ChatMessage>> getPendingMessages(String conversationId) async {
@@ -1040,20 +1166,23 @@ class ChatRepository {
     });
   }
 
-  /// Removes the private copy the queue kept for an upload that is now either
-  /// sent or doomed. The original photo in the gallery is never touched.
+  /// Removes the private copies the queue kept for an upload that is now either
+  /// sent or doomed — a clip and the poster staged beside it count as two. The
+  /// original file in the gallery is never touched.
   Future<void> _deleteStagedFile(ChatAttachmentDraft? draft) async {
-    final path = draft?.localPath;
-    if (path == null || !draft!.needsUpload) return;
-    try {
-      final file = File(path);
-      if (await file.exists()) await file.delete();
-    } catch (error, stackTrace) {
-      _logFailure(
-        'delete an uploaded pending chat attachment',
-        error,
-        stackTrace,
-      );
+    if (draft == null || !draft.needsUpload) return;
+    final poster = draft.thumbnailPath;
+    for (final path in [draft.localPath, ?poster]) {
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (error, stackTrace) {
+        _logFailure(
+          'delete an uploaded pending chat attachment',
+          error,
+          stackTrace,
+        );
+      }
     }
   }
 

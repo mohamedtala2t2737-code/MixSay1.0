@@ -58,20 +58,92 @@ void main() {
 
     test('only an upload owns a file on this device', () {
       expect(
-        ChatAttachmentDraft.queuedFilePath({
+        ChatAttachmentDraft.queuedFilePaths({
           'media_type': 'video',
           'local_path': '/tmp/pending/v.mp4',
         }),
-        '/tmp/pending/v.mp4',
+        ['/tmp/pending/v.mp4'],
       );
       expect(
-        ChatAttachmentDraft.queuedFilePath({
+        ChatAttachmentDraft.queuedFilePaths({
           'media_type': 'gif',
           'local_path': 'https://media.tenor.com/x.gif',
         }),
-        isNull,
+        isEmpty,
       );
-      expect(ChatAttachmentDraft.queuedFilePath({'content': 'hello'}), isNull);
+      expect(
+        ChatAttachmentDraft.queuedFilePaths({'content': 'hello'}),
+        isEmpty,
+      );
+    });
+
+    test('a queued clip owns its poster too, so nothing is left behind', () {
+      final entry = {
+        'media_type': 'video',
+        'local_path': '/tmp/pending/v.mp4',
+        'thumb_local_path': '/tmp/pending/v_thumb.jpg',
+      };
+
+      expect(ChatAttachmentDraft.queuedFilePaths(entry), [
+        '/tmp/pending/v.mp4',
+        '/tmp/pending/v_thumb.jpg',
+      ]);
+      expect(ChatAttachmentDraft.queueFieldsAreValid(entry), isTrue);
+      expect(
+        ChatAttachmentDraft.queueFieldsAreValid({
+          ...entry,
+          'thumb_local_path': '',
+        }),
+        isFalse,
+      );
+    });
+
+    test('a poster survives the round trip through the queue', () {
+      final draft = ChatAttachmentDraft(
+        type: ChatMessageType.video,
+        localPath: '/tmp/pending/v.mp4',
+        fileName: 'v.mp4',
+        byteSize: 4 * 1024 * 1024,
+        thumbnailPath: '/tmp/pending/v_thumb.jpg',
+        durationMs: 9000,
+      );
+      final rebuilt = ChatAttachmentDraft.fromQueueFields(
+        draft.toQueueFields(),
+      );
+
+      expect(rebuilt?.thumbnailPath, '/tmp/pending/v_thumb.jpg');
+      expect(rebuilt?.durationMs, 9000);
+    });
+
+    test('a poster lands beside the clip, in the senders own folder', () {
+      final draft = ChatAttachmentDraft(
+        type: ChatMessageType.video,
+        localPath: '/tmp/pending/v.mp4',
+        fileName: 'v.mp4',
+        byteSize: 4 * 1024 * 1024,
+        thumbnailPath: '/tmp/pending/v_thumb.jpg',
+      );
+
+      expect(
+        draft.thumbnailStoragePath(
+          conversationId: 'c1',
+          senderId: 'u1',
+          clientId: 'm9',
+        ),
+        'chats/c1/u1/m9_thumb.jpg',
+      );
+      // The object name is what the rules count, so both halves stay in the
+      // same four-part path.
+      expect(
+        draft
+            .thumbnailStoragePath(
+              conversationId: 'c1',
+              senderId: 'u1',
+              clientId: 'm9',
+            )
+            .split('/'),
+        hasLength(4),
+      );
     });
 
     test('a description with the wrong shape is refused', () {

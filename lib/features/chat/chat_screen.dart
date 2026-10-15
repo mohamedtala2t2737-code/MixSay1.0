@@ -45,7 +45,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _scrollController = ScrollController();
   final _connectivity = Connectivity();
   final _imagePicker = ImagePicker();
-  final _signedImageUrls = <String, Future<String>>{};
+  final _signedMediaUrls = <String, Future<String>>{};
 
   bool _loading = true;
   bool _loadingMore = false;
@@ -631,14 +631,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Future<String> _signedImageUrl(String path) => _signedImageUrls.putIfAbsent(
+  Future<String> _signedMediaUrl(String path) => _signedMediaUrls.putIfAbsent(
     path,
     () =>
-        ref.read(chatRepositoryProvider).getImageUrl(path)
+        ref.read(chatRepositoryProvider).getMediaUrl(path)
         // A cached failed future would keep every rebuild of this bubble
         // broken; drop it so the next build tries again.
         .catchError((Object error) {
-          _signedImageUrls.remove(path);
+          _signedMediaUrls.remove(path);
           throw error;
         }),
   );
@@ -1021,14 +1021,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 message.mediaPath == null ||
                                     message.localImagePath != null
                                 ? null
-                                : _signedImageUrl(message.mediaPath!),
+                                : _signedMediaUrl(message.mediaPath!),
                             localImagePath: message.localImagePath,
                             onImageTap: () => _showImageViewer(
                               imageUrl:
                                   message.mediaPath == null ||
                                       message.localImagePath != null
                                   ? null
-                                  : _signedImageUrl(message.mediaPath!),
+                                  : _signedMediaUrl(message.mediaPath!),
                               localImagePath: message.localImagePath,
                             ),
                           ),

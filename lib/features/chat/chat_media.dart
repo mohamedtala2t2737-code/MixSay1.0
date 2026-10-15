@@ -16,6 +16,7 @@ class ChatAttachmentDraft {
     required this.byteSize,
     this.caption,
     this.durationMs,
+    this.thumbnailPath,
   });
 
   final ChatMessageType type;
@@ -34,12 +35,18 @@ class ChatAttachmentDraft {
   final String? caption;
   final int? durationMs;
 
+  /// A still frame generated next to a clip, so reading a thread never
+  /// downloads the video just to show what it looks like. Null for every other
+  /// kind of attachment.
+  final String? thumbnailPath;
+
   static const _typeKey = 'media_type';
   static const _pathKey = 'local_path';
   static const _nameKey = 'file_name';
   static const _sizeKey = 'byte_size';
   static const _captionKey = 'caption';
   static const _durationKey = 'duration_ms';
+  static const _thumbnailKey = 'thumb_local_path';
 
   /// The wire key the queue has always used for a photo. A queued message from
   /// an older build still carries it, so reading must accept both.
@@ -73,10 +80,23 @@ class ChatAttachmentDraft {
     required String clientId,
   }) => 'chats/$conversationId/$senderId/${storageObjectName(clientId)}';
 
+  /// The poster travels beside the clip, in the same folder, named after the
+  /// same message. `storage.rules` accepts it because the folder is the
+  /// sender's own; `firestore.rules` accepts it as a `thumbUrl` for the same
+  /// reason.
+  String thumbnailStoragePath({
+    required String conversationId,
+    required String senderId,
+    required String clientId,
+  }) =>
+      'chats/$conversationId/$senderId/'
+      '$clientId$chatMediaThumbnailSuffix.jpg';
+
   ChatAttachmentDraft copyWith({
     String? localPath,
     int? byteSize,
     String? caption,
+    String? thumbnailPath,
   }) => ChatAttachmentDraft(
     type: type,
     localPath: localPath ?? this.localPath,
@@ -84,6 +104,7 @@ class ChatAttachmentDraft {
     byteSize: byteSize ?? this.byteSize,
     caption: caption ?? this.caption,
     durationMs: durationMs,
+    thumbnailPath: thumbnailPath ?? this.thumbnailPath,
   );
 
   /// The size the ceiling check reads, measured from the file instead of from
@@ -94,12 +115,15 @@ class ChatAttachmentDraft {
     return copyWith(byteSize: await File(localPath).length());
   }
 
-  /// The staged file a queue entry owns, or null when it owns none: a plain
-  /// message has no attachment and a queued GIF is only a url, so deleting
-  /// either path would throw the app at a file that never existed.
-  static String? queuedFilePath(Map<String, dynamic> entry) {
+  /// Every file on this device a queue entry owns: the staged upload and, for a
+  /// clip, the poster staged beside it. An entry that owns none is a plain
+  /// message or a queued GIF, which is only a url — deleting either path would
+  /// throw the app at a file that never existed.
+  static List<String> queuedFilePaths(Map<String, dynamic> entry) {
     final draft = fromQueueFields(entry);
-    return draft != null && draft.needsUpload ? draft.localPath : null;
+    if (draft == null || !draft.needsUpload) return const [];
+    final poster = draft.thumbnailPath;
+    return poster == null ? [draft.localPath] : [draft.localPath, poster];
   }
 
   /// Whether an entry's attachment description is usable. The queue holds JSON
@@ -113,9 +137,11 @@ class ChatAttachmentDraft {
     final caption = entry[_captionKey];
     final duration = entry[_durationKey];
     final sticker = entry['sticker_id'];
+    final thumbnail = entry[_thumbnailKey];
     return (type == null || type is String) &&
         (sticker == null || sticker is String) &&
         (path == null || (path is String && path.isNotEmpty)) &&
+        (thumbnail == null || (thumbnail is String && thumbnail.isNotEmpty)) &&
         (name == null || name is String) &&
         (size == null || (size is int && size >= 0)) &&
         (caption == null || caption is String) &&
@@ -130,6 +156,7 @@ class ChatAttachmentDraft {
     _sizeKey: byteSize,
     if (caption != null && caption!.isNotEmpty) _captionKey: caption,
     if (durationMs != null) _durationKey: durationMs,
+    if (thumbnailPath != null) _thumbnailKey: thumbnailPath,
   };
 
   /// Rebuild a draft from a queue entry, or null when the entry is a plain
@@ -142,6 +169,7 @@ class ChatAttachmentDraft {
     final size = entry[_sizeKey];
     final duration = entry[_durationKey];
     final caption = entry[_captionKey];
+    final thumbnail = entry[_thumbnailKey];
     return ChatAttachmentDraft(
       // An entry queued by an older build carries only the photo key, and a
       // photo was the only attachment that app could queue.
@@ -153,9 +181,19 @@ class ChatAttachmentDraft {
       byteSize: size is int ? size : 0,
       caption: caption is String ? caption : null,
       durationMs: duration is int ? duration : null,
+      thumbnailPath: thumbnail is String ? thumbnail : null,
     );
   }
 }
+
+/// A clip's poster travels beside the video under the same client id, in the
+/// sender's own folder. One name for it keeps the upload path, the staged copy
+/// and the queue entry agreeing.
+const String chatMediaThumbnailSuffix = '_thumb';
+
+/// The content type a generated poster is uploaded with, which is also the one
+/// `storage.rules` reads to pick the image ceiling.
+const String chatMediaThumbnailContentType = 'image/jpeg';
 
 /// The lower-case extension, without the dot, that a stored object gets.
 ///

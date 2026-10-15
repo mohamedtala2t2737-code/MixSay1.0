@@ -116,24 +116,24 @@ class PendingQueueService {
         );
         await transaction.save();
         for (final entry in removed) {
-          final path = ChatAttachmentDraft.queuedFilePath(entry);
-          if (path == null) continue;
-          final file = File(path);
-          if (await file.exists()) await file.delete();
+          for (final path in ChatAttachmentDraft.queuedFilePaths(entry)) {
+            final file = File(path);
+            if (await file.exists()) await file.delete();
+          }
         }
       });
 
   /// Drops files in the pending folder that no queued message points at any
   /// more, once they are old enough that no send can still be waiting for the
-  /// network. A queued GIF owns no file, so only real staged uploads count.
+  /// network. A queued GIF owns no file, so only real staged uploads count, and
+  /// a clip owns two files: itself and the poster staged beside it.
   Future<void> cleanupOrphanedFiles() => runExclusive((transaction) async {
     final directory = Directory(
       '${(await getApplicationSupportDirectory()).path}/pending-chat',
     );
     if (!await directory.exists()) return;
     final referencedPaths = transaction.entries
-        .map(ChatAttachmentDraft.queuedFilePath)
-        .whereType<String>()
+        .expand(ChatAttachmentDraft.queuedFilePaths)
         .toSet();
     final cutoff = DateTime.now().subtract(_orphanAge);
     await for (final entity in directory.list(followLinks: false)) {
