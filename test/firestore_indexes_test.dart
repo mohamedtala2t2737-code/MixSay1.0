@@ -61,6 +61,61 @@ void main() {
     );
   });
 
+  test('each profile content tab has a matching post index', () {
+    // FeedRepository.fetchPostsByAuthorAndType filters authorId and mediaType
+    // and orders by createdAt, so all three fields have to be in one index or
+    // the query works in the emulator and fails on the real project.
+    expect(
+      indexFor('posts', [
+        'authorId ASCENDING',
+        'mediaType ASCENDING',
+        'createdAt DESCENDING',
+      ]),
+      isNotNull,
+    );
+    // The untyped wall keeps its own index: the header counter still uses it.
+    expect(
+      indexFor('posts', ['authorId ASCENDING', 'createdAt DESCENDING']),
+      isNotNull,
+    );
+  });
+
+  test('every index is a collection-scope one', () {
+    for (final index in declaredIndexes.cast<Map<String, dynamic>>()) {
+      expect(index['collectionGroup'], isNotEmpty);
+      expect(index['queryScope'], 'COLLECTION');
+    }
+  });
+
+  test('the profile tab query filters the type on the server', () {
+    final source = File('lib/features/feed/data/feed_repository.dart')
+        .readAsStringSync();
+    final start = source.indexOf('fetchPostsByAuthorAndType');
+    final body = source.substring(start, start + 1400);
+
+    expect(body, contains("where('authorId', isEqualTo: authorId)"));
+    expect(body, contains("where('mediaType', isEqualTo: mediaType)"));
+    expect(body, contains("orderBy('createdAt', descending: true)"));
+    expect(body, contains('startAfterDocument(after)'));
+    expect(body, contains('limit(limit)'));
+    // The page size is what the list rule allows, and nothing bigger.
+    expect(File('firestore.rules').readAsStringSync(),
+        contains('request.query.limit <= 30'));
+    expect(source, contains('static const postPageSize = 30'));
+    expect(body, contains('int limit = postPageSize'));
+  });
+
+  test('the profile tabs never filter a mixed page on the client', () {
+    final screen = File(
+      'lib/features/profile/presentation/profile_screen.dart',
+    ).readAsStringSync();
+
+    // The old wall read one mixed list and picked the clips out of it, which
+    // showed too few tiles and broke the cursor.
+    expect(screen, isNot(contains('mediaType ==')));
+    expect(screen, isNot(contains(".where((post)")));
+  });
+
   test('every arrayContains query in the repository is indexed', () {
     final source = File('lib/features/chat/chat_repository.dart')
         .readAsStringSync();

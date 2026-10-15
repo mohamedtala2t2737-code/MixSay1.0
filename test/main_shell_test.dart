@@ -20,6 +20,7 @@ import 'package:social_chat/features/notifications/data/notification_repository.
 import 'package:social_chat/features/notifications/presentation/notification_providers.dart';
 import 'package:social_chat/features/profile/data/follow_repository.dart';
 import 'package:social_chat/features/profile/presentation/follow_providers.dart';
+import 'package:social_chat/features/profile/presentation/profile_tab_posts_provider.dart';
 import 'package:social_chat/features/stories/data/story_repository.dart';
 import 'package:social_chat/features/stories/presentation/story_providers.dart';
 
@@ -29,6 +30,15 @@ const _me = AppUser(
   fullName: 'MixSay User',
 );
 
+/// An account with nothing posted yet, so the shell never asks Firestore.
+class _EmptyTab extends ProfileTabPostsController {
+  _EmptyTab(super.authorId, super.tab);
+
+  @override
+  Future<ProfileTabPosts> build() async =>
+      const ProfileTabPosts(posts: []);
+}
+
 Widget _harness(Locale locale) => ProviderScope(
   overrides: [
     currentUserIdProvider.overrideWithValue('user-me'),
@@ -36,6 +46,12 @@ Widget _harness(Locale locale) => ProviderScope(
     feedPostsProvider.overrideWith((ref) => Stream.value(const <FeedPost>[])),
     authorPostsProvider.overrideWith(
       (ref, authorId) => Stream.value(const <FeedPost>[]),
+    ),
+    // The profile's content tabs, empty like the wall above them. Without this
+    // the tab would try to reach Firestore and report a load failure instead of
+    // an empty account.
+    profileTabPostsProvider.overrideWith2(
+      (key) => _EmptyTab(key.$1, key.$2),
     ),
     followerCountProvider.overrideWith(
       (ref, userId) async => const FollowCount(0),

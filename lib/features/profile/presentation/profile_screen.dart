@@ -11,9 +11,11 @@ import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
+import 'package:social_chat/features/feed/presentation/post_detail_screen.dart';
 import 'package:social_chat/features/home/presentation/create_post_sheet.dart';
 import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
 import 'package:social_chat/features/profile/presentation/follow_providers.dart';
+import 'package:social_chat/features/profile/presentation/profile_tab_posts_provider.dart';
 import 'package:social_chat/features/profile/presentation/widgets/profile_action_button.dart';
 import 'package:social_chat/features/profile/presentation/widgets/profile_post_grid.dart';
 import 'package:social_chat/features/profile/presentation/widgets/profile_stats_row.dart';
@@ -31,14 +33,20 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
-  static const _tabIcons = [
-    Icons.grid_view,
-    Icons.ondemand_video_outlined,
-    Icons.autorenew,
-    Icons.local_offer_outlined,
-  ];
+  /// Each content tab is one `mediaType`, and its wall is read from the server
+  /// already filtered, so a page of 30 is 30 tiles of that tab.
+  static const _tabIcons = {
+    ProfilePostTab.images: Icons.grid_view,
+    ProfilePostTab.videos: Icons.play_circle_outline,
+    ProfilePostTab.text: Icons.text_snippet_outlined,
+  };
+  static const _tabEmptyIcons = {
+    ProfilePostTab.images: Icons.photo_library_outlined,
+    ProfilePostTab.videos: Icons.play_circle_outline,
+    ProfilePostTab.text: Icons.text_snippet_outlined,
+  };
 
-  int _tab = 0;
+  ProfilePostTab _tab = ProfilePostTab.images;
 
   void _sayComingSoon(AppStrings s) {
     ScaffoldMessenger.of(context)
@@ -66,49 +74,140 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     child: child,
   );
 
-  Widget _body(
+  Widget _tabBody(
     AppStrings s,
-    AsyncValue<List<FeedPost>> posts,
-    List<FeedPost> items, {
-    required VoidCallback onRetry,
-  }) {
-    if (posts.hasError) {
-      return _gap(ErrorStateView(message: s.loadFailed, onRetry: onRetry));
+    ProfileTabKey? key,
+    AsyncValue<ProfileTabPosts> wall,
+  ) {
+    if (key == null) return _gap(const LoadingView());
+    if (wall.hasError && !wall.hasValue) {
+      return _gap(
+        ErrorStateView(
+          message: s.loadFailed,
+          onRetry: () => ref.invalidate(profileTabPostsProvider(key)),
+        ),
+      );
     }
-    if (posts.isLoading && items.isEmpty) {
+    if (wall.isLoading && !wall.hasValue) {
       return const SizedBox(height: 220, child: LoadingView());
     }
 
-    final videos = items
-        .where((post) => post.mediaType == 'video')
-        .toList(growable: false);
+    final data = wall.value!;
+    return Column(
+      children: [
+        ProfilePostGrid(
+          posts: data.posts,
+          tab: key.$2,
+          onPostTap: (post) => openPostDetail(context, post),
+          empty: _gap(
+            EmptyStateView(
+              icon: _tabEmptyIcons[key.$2]!,
+              title: switch (key.$2) {
+                ProfilePostTab.images => s.noImages,
+                ProfilePostTab.videos => s.noVideos,
+                ProfilePostTab.text => s.noTextPosts,
+              },
+              actionLabel: key.$2 == ProfilePostTab.videos
+                  ? null
+                  : s.createPost,
+              onAction: key.$2 == ProfilePostTab.videos
+                  ? null
+                  : () => showCreatePostSheet(context),
+            ),
+          ),
+        ),
+        _loadMore(s, key, data),
+      ],
+    );
+  }
 
-    return switch (_tab) {
-      0 => ProfilePostGrid(
-        posts: items,
-        empty: _gap(
-          EmptyStateView(
-            icon: Icons.photo_library_outlined,
-            title: s.noPostsYet,
-            actionLabel: s.createPost,
-            onAction: () => showCreatePostSheet(context),
+  /// The next page of this tab, or why it has not arrived. The tiles already on
+  /// screen stay put either way.
+  Widget _loadMore(AppStrings s, ProfileTabKey key, ProfileTabPosts data) {
+    if (!data.hasMore) return const SizedBox.shrink();
+    if (data.isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.lg),
+        child: SizedBox(
+          height: 20,
+          width: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        if (data.moreError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: Text(s.loadFailed, textAlign: TextAlign.center),
+          ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+          child: TextButton(
+            onPressed: () =>
+                ref.read(profileTabPostsProvider(key).notifier).loadMore(),
+            child: Text(s.showMore),
           ),
         ),
-      ),
-      1 => ProfilePostGrid(
-        posts: videos,
-        empty: _gap(
-          EmptyStateView(
-            icon: Icons.ondemand_video_outlined,
-            title: s.noVideos,
-          ),
+      ],
+    );
+  }
+
+  Widget _tabRow(AppStrings s, String username, Color divider) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.lg),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: divider)),
+        ),
+        child: Row(
+          children: [
+            for (final tab in ProfilePostTab.values)
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _tab = tab),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.md,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          width: 2,
+                          color: _tab == tab
+                              ? Theme.of(context).colorScheme.onSurface
+                              : Colors.transparent,
+                        ),
+                      ),
+                    ),
+                    child: Icon(
+                      _tabIcons[tab],
+                      semanticLabel: switch (tab) {
+                        ProfilePostTab.images => s.imagesTab,
+                        ProfilePostTab.videos => s.videosTab,
+                        ProfilePostTab.text => s.textTab,
+                      },
+                      color: _tab == tab
+                          ? Theme.of(context).colorScheme.onSurface
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            // Sharing is an action, not a fourth wall: it never takes the
+            // underline and never changes what the other tabs show.
+            IconButton(
+              tooltip: s.shareProfile,
+              onPressed: username.isEmpty
+                  ? null
+                  : () => _shareProfile(s, username),
+              icon: const Icon(Icons.share_outlined),
+            ),
+          ],
         ),
       ),
-      2 => _gap(EmptyStateView(icon: Icons.autorenew, title: s.noReposts)),
-      _ => _gap(
-        EmptyStateView(icon: Icons.local_offer_outlined, title: s.noTagged),
-      ),
-    };
+    );
   }
 
   @override
@@ -121,6 +220,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ? const AsyncLoading<List<FeedPost>>()
         : ref.watch(authorPostsProvider(userId));
     final items = posts.value ?? const <FeedPost>[];
+    final tabKey = userId == null ? null : (userId, _tab);
+    final wall = tabKey == null
+        ? const AsyncLoading<ProfileTabPosts>()
+        : ref.watch(profileTabPostsProvider(tabKey));
     final followerCount = userId == null
         ? null
         : ref.watch(followerCountProvider(userId)).value;
@@ -149,6 +252,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ..invalidate(authorPostsProvider(userId))
                       ..invalidate(followerCountProvider(userId))
                       ..invalidate(followingCountProvider(userId));
+                  }
+                  if (tabKey != null) {
+                    ref.invalidate(profileTabPostsProvider(tabKey));
+                    // The spinner stays until the tab has read a page again. A
+                    // failed read is the tab's own problem to show, so it is
+                    // swallowed here rather than thrown at the gesture.
+                    await ref
+                        .read(profileTabPostsProvider(tabKey).future)
+                        .catchError((Object _) => const ProfileTabPosts(
+                          posts: [],
+                        ));
                   }
                 },
                 child: ListView(
@@ -233,61 +347,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ],
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.lg),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          border: Border(
-                            top: BorderSide(color: theme.dividerColor),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            for (
-                              var index = 0;
-                              index < _tabIcons.length;
-                              index++
-                            )
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () => setState(() => _tab = index),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: AppSpacing.md,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      border: Border(
-                                        bottom: BorderSide(
-                                          width: 2,
-                                          color: _tab == index
-                                              ? theme.colorScheme.onSurface
-                                              : Colors.transparent,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Icon(
-                                      _tabIcons[index],
-                                      color: _tab == index
-                                          ? theme.colorScheme.onSurface
-                                          : theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    _body(
-                      s,
-                      posts,
-                      items,
-                      onRetry: () {
-                        if (userId != null) {
-                          ref.invalidate(authorPostsProvider(userId));
-                        }
-                      },
-                    ),
+                    _tabRow(s, username, theme.dividerColor),
+                    _tabBody(s, tabKey, wall),
                   ],
                 ),
               ),

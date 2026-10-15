@@ -454,11 +454,6 @@ class AppStrings {
   String get notifGeneric =>
       isArabic ? 'عندك إشعار جديد' : 'updated something you follow';
 
-  // ---------- profile tab ----------
-  String get myPosts => isArabic ? 'منشوراتي' : 'My posts';
-  String get noPostsYet =>
-      isArabic ? 'لم تنشر أي شيء بعد' : 'You have not posted yet';
-
   // ---------- profile screen ----------
   String get postsStat => isArabic ? 'منشورات' : 'posts';
   String get followersStat => isArabic ? 'متابع' : 'followers';
@@ -467,15 +462,15 @@ class AppStrings {
   String get shareProfile => isArabic ? 'مشاركة الملف' : 'Share profile';
   String get changePhoto => isArabic ? 'تغيير الصورة' : 'Change photo';
   String get switchAccounts => isArabic ? 'تبديل الحسابات' : 'Switch accounts';
-  String get postsTab => isArabic ? 'المنشورات' : 'Posts';
+  String get imagesTab => isArabic ? 'الصور' : 'Images';
   String get videosTab => isArabic ? 'الفيديوهات' : 'Videos';
-  String get repostsTab => isArabic ? 'إعادة النشر' : 'Reposts';
-  String get taggedTab => isArabic ? 'أنت مُشار' : 'Tagged';
+  String get textTab => isArabic ? 'النص' : 'Text';
+  String get postDetailTitle => isArabic ? 'المنشور' : 'Post';
+  String get showMore => isArabic ? 'عرض المزيد' : 'Show more';
+  String get noImages => isArabic ? 'مافيش صور لسه' : 'No photos yet';
   String get noVideos => isArabic ? 'مافيش فيديوهات لسه' : 'No videos yet';
-  String get noReposts =>
-      isArabic ? 'مافيش إعادة نشر لسه' : 'Nothing reposted yet';
-  String get noTagged =>
-      isArabic ? 'مافيش حاجات اتعملك فيها إشارة' : 'Nothing tagged you in yet';
+  String get noTextPosts =>
+      isArabic ? 'مافيش منشورات نصية لسه' : 'No text posts yet';
   String get followersTitle => isArabic ? 'المتابعون' : 'Followers';
   String get followingTitle => isArabic ? 'أتابع' : 'Following';
   String get noFollowers => isArabic ? 'مافيش متابعين لسه' : 'No followers yet';

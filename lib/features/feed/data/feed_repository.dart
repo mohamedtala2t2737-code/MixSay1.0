@@ -87,6 +87,25 @@ class FeedPost {
   }
 }
 
+/// One page of an author's posts, plus what it takes to ask for the next one.
+class FeedPostPage {
+  const FeedPostPage({
+    required this.posts,
+    required this.hasMore,
+    this.cursor,
+  });
+
+  final List<FeedPost> posts;
+
+  /// A full page means the query had an answer for every slot, so more posts
+  /// are probably waiting. A short page is the end of the list.
+  final bool hasMore;
+
+  /// The last document read, used as `startAfter` for the next page. Null only
+  /// when the page came back empty.
+  final DocumentSnapshot? cursor;
+}
+
 class FeedComment {
   const FeedComment({
     required this.id,
@@ -209,6 +228,43 @@ class FeedRepository {
             )
             .toList(growable: false),
       );
+
+  /// One page of one author's posts of exactly one `mediaType`.
+  ///
+  /// The type filter runs on the server, not over a mixed page: filtering after
+  /// reading would put fewer than 30 tiles on the wall whenever the newest posts
+  /// are of another type, and the cursor would skip past the ones that matched.
+  /// Needs the `authorId ASC, mediaType ASC, createdAt DESC` index declared in
+  /// `firestore.indexes.json`; the emulator never complains about a missing one.
+  Future<FeedPostPage> fetchPostsByAuthorAndType({
+    required String authorId,
+    required String mediaType,
+    DocumentSnapshot? after,
+    int limit = postPageSize,
+  }) async {
+    // `allow list: request.query.limit <= 30`, so a page is never asked for
+    // larger than the wall's own size.
+    Query<Map<String, dynamic>> query = _posts
+        .where('authorId', isEqualTo: authorId)
+        .where('mediaType', isEqualTo: mediaType)
+        .orderBy('createdAt', descending: true);
+    if (after != null) query = query.startAfterDocument(after);
+
+    final snapshot = await query.limit(limit).get();
+    final documents = snapshot.docs;
+    return FeedPostPage(
+      posts: documents
+          .map(
+            (document) => FeedPost.fromFirestore(
+              document: document,
+              isLiked: false,
+            ),
+          )
+          .toList(growable: false),
+      hasMore: documents.length == limit,
+      cursor: documents.isEmpty ? null : documents.last,
+    );
+  }
 
   Stream<List<FeedComment>> watchComments(String postId) => _posts
       .doc(postId)
