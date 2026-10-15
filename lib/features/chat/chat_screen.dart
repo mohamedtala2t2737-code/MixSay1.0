@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +12,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
+import 'package:social_chat/core/errors/app_exceptions.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/widgets/states.dart';
@@ -43,6 +44,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Object? _messagesStreamError;
   QueryDocumentSnapshot<Map<String, dynamic>>? _oldestMessageDocument;
   ChatConversationInfo? _conversation;
+  String? _conversationError;
   List<ChatMessage> _messages = [];
   StreamSubscription<List<ChatMessage>>? _messageSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
@@ -79,12 +81,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           .read(chatRepositoryProvider)
           .getConversationInfo(widget.conversationId);
       if (!mounted) return;
-      setState(() => _conversation = conversation);
+      setState(() {
+        _conversation = conversation;
+        _conversationError = null;
+      });
     } catch (error, stackTrace) {
-      debugPrint('Unable to load conversation: $error');
+      debugPrint(
+        'Unable to load conversation: ${describeFirestoreFailure(error)}',
+      );
       debugPrintStack(stackTrace: stackTrace);
       if (!mounted) return;
-      setState(() => _conversation = null);
+      setState(() {
+        _conversation = null;
+        _conversationError = describeFirestoreFailure(error);
+      });
     }
   }
 
@@ -309,7 +319,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         .listen(
           _handleMessageChanges,
           onError: (Object error, StackTrace stackTrace) {
-            debugPrint('Unable to subscribe to chat messages: $error');
+            debugPrint(
+              'Unable to subscribe to chat messages: '
+              '${describeFirestoreFailure(error)}',
+            );
             debugPrintStack(stackTrace: stackTrace);
             if (!mounted) return;
             setState(() => _messagesStreamError = error);
@@ -557,6 +570,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               Expanded(
                 child: ErrorStateView(
                   message: s.loadFailed,
+                  debugDetail: _conversationError,
                   onRetry: _loadConversation,
                 ),
               )
@@ -573,7 +587,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          s.loadFailed,
+                          kDebugMode
+                              ? '${s.loadFailed} '
+                                    '(${firestoreErrorCode(_messagesStreamError!)})'
+                              : s.loadFailed,
                           style: TextStyle(
                             color: Theme.of(context)
                                 .colorScheme

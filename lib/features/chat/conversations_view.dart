@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:social_chat/core/errors/app_exceptions.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_typography.dart';
 import 'package:social_chat/core/widgets/states.dart';
@@ -32,10 +33,11 @@ class ConversationsListView extends ConsumerWidget {
     return conversations.when(
       loading: () => const LoadingView(),
       error: (error, stackTrace) {
-        debugPrint('Unable to load conversations: $error');
+        debugPrint('Unable to load conversations: ${describeFirestoreFailure(error)}');
         debugPrintStack(stackTrace: stackTrace);
         return ErrorStateView(
           message: s.loadFailed,
+          debugDetail: firestoreErrorCode(error),
           onRetry: () => ref.invalidate(conversationsProvider),
         );
       },
@@ -212,7 +214,10 @@ class _NewChatDialogState extends ConsumerState<_NewChatDialog> {
                           return const LoadingView();
                         }
                         if (snapshot.hasError) {
-                          return ErrorStateView(message: s.loadFailed);
+                          return ErrorStateView(
+                            message: s.loadFailed,
+                            debugDetail: firestoreErrorCode(snapshot.error),
+                          );
                         }
                         final users =
                             snapshot.data ?? const <ChatUserPreview>[];

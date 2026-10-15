@@ -52,7 +52,7 @@
       "fields": [
         {
           "fieldPath": "members",
-          "order": "ASCENDING"
+          "arrayConfig": "CONTAINS"
         },
         {
           "fieldPath": "lastMessageAt",
