@@ -25,6 +25,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getCountFromServer,
   getDoc,
   getDocs,
   increment,
@@ -34,6 +35,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
@@ -1099,6 +1101,88 @@ await check('deleteStory must clear the audience before the story document', asy
   await assertSucceeds(setDoc(viewers('bobStory', ALICE), view(ALICE)));
   await assertSucceeds(deleteDoc(doc(db(BOB), 'stories', 'bobStory')));
   await assertFails(deleteDoc(doc(db(BOB), 'stories', 'bobStory', 'viewers', ALICE)));
+});
+
+console.log('\nfollows');
+
+const followRow = (uid) => ({ userId: uid, followedAt: serverTimestamp() });
+// Each db(uid) is its own Firestore instance, so a batch has to be built from
+// the same instance as the references it writes.
+const followersDoc = (as, ownerId, followerId) =>
+  doc(db(as), 'users', ownerId, 'followers', followerId);
+const followingDoc = (as, ownerId, targetId) =>
+  doc(db(as), 'users', ownerId, 'following', targetId);
+const on = (store, ownerId, sub, rowId) =>
+  doc(store, 'users', ownerId, sub, rowId);
+
+// FollowRepository.setFollowing writes exactly these two rows in one batch.
+await check('a follow writes both mirrored rows in one batch', async () => {
+  const alice = db(ALICE);
+  const batch = writeBatch(alice);
+  batch.set(on(alice, BOB, 'followers', ALICE), followRow(ALICE));
+  batch.set(on(alice, ALICE, 'following', BOB), followRow(BOB));
+  await assertSucceeds(batch.commit());
+});
+await check('a stranger may page through someone follower list', async () => {
+  await assertSucceeds(
+    getDocs(
+      query(collection(db(MALLORY), 'users', BOB, 'followers'), limit(201)),
+    ),
+  );
+});
+await check('dumping a whole follower list without a limit is refused', async () => {
+  await assertFails(getDocs(collection(db(MALLORY), 'users', BOB, 'followers')));
+});
+// This is why the app counts with a limit(201) probe instead of count(): an
+// aggregate carries no limit, so no rule can bound it.
+await check('a count() aggregate is refused under the bounded list rule', async () => {
+  await assertFails(
+    getCountFromServer(collection(db(MALLORY), 'users', BOB, 'followers')),
+  );
+});
+await check('nobody writes a follower row for another account', async () => {
+  await assertFails(setDoc(followersDoc(BOB, BOB, ALICE), followRow(ALICE)));
+});
+await check('a user cannot follow themselves', async () => {
+  await assertFails(setDoc(followersDoc(ALICE, ALICE, ALICE), followRow(ALICE)));
+  await assertFails(setDoc(followingDoc(ALICE, ALICE, ALICE), followRow(ALICE)));
+});
+await check('a follow row cannot claim to be about somebody else', async () => {
+  await assertFails(setDoc(followersDoc(MALLORY, BOB, MALLORY), followRow(ALICE)));
+});
+await check('a follow row has no extra fields', async () => {
+  await assertFails(
+    setDoc(followersDoc(MALLORY, BOB, MALLORY), {
+      ...followRow(MALLORY),
+      since: '2020',
+    }),
+  );
+});
+await check('a follow written with the device clock is refused', async () => {
+  await assertFails(
+    setDoc(followersDoc(MALLORY, BOB, MALLORY), {
+      userId: MALLORY,
+      followedAt: Timestamp.fromDate(new Date('2020-01-01')),
+    }),
+  );
+});
+await check('a following row cannot be planted in another account list', async () => {
+  await assertFails(setDoc(followingDoc(MALLORY, BOB, ALICE), followRow(ALICE)));
+});
+await check('a follow cannot be edited', async () => {
+  await assertFails(
+    updateDoc(followersDoc(ALICE, BOB, ALICE), { userId: MALLORY }),
+  );
+});
+await check('the author of a profile cannot remove a follower', async () => {
+  await assertFails(deleteDoc(followersDoc(BOB, BOB, ALICE)));
+});
+await check('an unfollow removes both rows', async () => {
+  const alice = db(ALICE);
+  const batch = writeBatch(alice);
+  batch.delete(on(alice, BOB, 'followers', ALICE));
+  batch.delete(on(alice, ALICE, 'following', BOB));
+  await assertSucceeds(batch.commit());
 });
 
 console.log('\nreports');

@@ -88,6 +88,48 @@ service cloud.firestore {
           && request.resource.data.updatedAt is timestamp;
         allow delete: if signedIn() && request.auth.uid == userId;
       }
+
+      // ------------------------------------------------------------- follows
+      // A follow is two mirrored rows written by the follower in one batch:
+      // `users/{target}/followers/{me}` and `users/{me}/following/{target}`.
+      // Mirroring keeps both directions a plain subcollection read instead of a
+      // `where` query across a global collection, which would need a composite
+      // index and would let anyone stream somebody else's whole graph.
+      // The row id is the person the row is ABOUT, so the key and the `userId`
+      // field have to agree and nobody can write a row for anybody but
+      // themselves.
+      match /followers/{followerId} {
+        allow create: if verifiedUser()
+          && request.auth.uid == followerId
+          && request.auth.uid != userId
+          && request.resource.data.keys().hasOnly(['userId', 'followedAt'])
+          && request.resource.data.userId == followerId
+          && request.resource.data.followedAt == request.time;
+        // The graph is public the way the feed is: any verified user may see
+        // who follows whom. Reading rows one by one is unlimited, listing them
+        // is capped at FollowRepository.countProbe, which is how the app counts
+        // followers without a count() aggregate (an aggregate carries no limit,
+        // so it cannot be bounded by `request.query.limit`).
+        allow get: if verifiedUser();
+        allow list: if verifiedUser() && request.query.limit <= 201;
+        // Only the follower can end a follow; the author of a profile cannot
+        // erase someone's own row.
+        allow delete: if verifiedUser() && request.auth.uid == followerId;
+        allow update: if false;
+      }
+
+      match /following/{targetId} {
+        allow create: if verifiedUser()
+          && request.auth.uid == userId
+          && request.auth.uid != targetId
+          && request.resource.data.keys().hasOnly(['userId', 'followedAt'])
+          && request.resource.data.userId == targetId
+          && request.resource.data.followedAt == request.time;
+        allow get: if verifiedUser();
+        allow list: if verifiedUser() && request.query.limit <= 201;
+        allow delete: if verifiedUser() && request.auth.uid == userId;
+        allow update: if false;
+      }
     }
 
     //------------------------------------------------------- publicProfiles
