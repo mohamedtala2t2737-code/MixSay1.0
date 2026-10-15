@@ -8,6 +8,7 @@ import 'package:social_chat/core/domain/app_user.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/theme/app_theme.dart';
+import 'package:social_chat/core/theme/app_typography.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
@@ -90,6 +91,25 @@ void main() {
       AppColors.darkBackground,
     );
     expect(AppColors.darkBackground, const Color(0xFF121212));
+  });
+
+  testWidgets('the wordmark keeps its logo face inside the bar', (
+    tester,
+  ) async {
+    _usePhoneViewport(tester);
+    await tester.pumpWidget(_harness(const Locale('en')));
+    await tester.pumpAndSettle();
+
+    final style = tester.widget<Text>(find.text('MixSay')).style!;
+    expect(style.fontFamily, 'Kalam');
+    expect(style.fontSize, AppTypography.wordmark);
+
+    // The logo face has tall ascenders, so the word must not spill over the
+    // toolbar it sits in.
+    final bar = tester.getRect(find.byType(AppBar));
+    final wordmark = tester.getRect(find.text('MixSay'));
+    expect(wordmark.top, greaterThanOrEqualTo(bar.top));
+    expect(wordmark.bottom, lessThanOrEqualTo(bar.bottom));
   });
 
   for (final locale in [const Locale('en'), const Locale('ar')]) {

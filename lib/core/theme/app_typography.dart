@@ -33,8 +33,9 @@ class AppTypography {
   /// A large sheet title.
   static const double title = 22;
 
-  /// The `MixSay` wordmark in the top bar, painted in Pacifico.
-  static const double wordmark = 27;
+  /// The `MixSay` wordmark in the top bar, painted in Kalam. The face has tall
+  /// ascenders, so this size keeps the word inside the 56-point toolbar.
+  static const double wordmark = 26;
 
   /// No colors here on purpose: the widget decides whether a line is primary or
   /// muted, and a color set on a text role would override a button's own

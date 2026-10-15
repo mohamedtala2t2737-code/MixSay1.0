@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
+import 'package:social_chat/core/theme/app_typography.dart';
 import 'package:social_chat/core/widgets/app_settings_sheet.dart';
 import 'package:social_chat/features/chat/conversations_view.dart';
 import 'package:social_chat/features/home/presentation/create_post_sheet.dart';
@@ -108,7 +109,11 @@ class _PinnedAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-/// Calligraphy logo for the home bar. Latin letters, so it never mirrors.
+/// Logo for the home bar, in Kalam: a print handwriting face, so the `M` and `S`
+/// stay the typed capitals instead of script swashes. Latin letters, so it never
+/// mirrors. No `height` is set on purpose — the face's own line box is 1.59 em,
+/// 41 points at [AppTypography.wordmark], which is the tallest the 56-point
+/// toolbar can hold without clipping the `y`.
 class _MixSayWordmark extends StatelessWidget {
   const _MixSayWordmark();
 
@@ -122,9 +127,9 @@ class _MixSayWordmark extends StatelessWidget {
         child: const Text(
           'MixSay',
           style: TextStyle(
-            fontFamily: 'Pacifico',
-            fontSize: 27,
-            height: 1.2,
+            fontFamily: 'Kalam',
+            fontWeight: FontWeight.bold,
+            fontSize: AppTypography.wordmark,
             color: Colors.white,
           ),
         ),

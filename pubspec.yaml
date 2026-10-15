@@ -81,9 +81,12 @@ flutter:
     - assets/images/mixsay_logo.png
     - assets/images/mixsay_logo_splash.png
   fonts:
-    - family: Pacifico
+    # Kalam is the home bar wordmark: a casual printed handwriting face under the
+    # SIL Open Font License, like the platform's own print-style logo faces, so it
+    # may ship inside the app. Pacifico is no longer referenced.
+    - family: Kalam
       fonts:
-        - asset: assets/fonts/Pacifico-Regular.ttf
+        - asset: assets/fonts/Kalam-Bold.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:
