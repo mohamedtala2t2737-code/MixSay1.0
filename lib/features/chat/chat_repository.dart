@@ -117,6 +117,7 @@ class ChatConversationInfo {
     required this.otherUsername,
     required this.otherFullName,
     this.otherAvatarUrl,
+    this.otherProfileMissing = false,
   });
 
   final String conversationId;
@@ -124,6 +125,12 @@ class ChatConversationInfo {
   final String otherUsername;
   final String otherFullName;
   final String? otherAvatarUrl;
+
+  /// The other account's public profile document is gone, which is what a
+  /// deleted account looks like. The name on the conversation document is then
+  /// the last known one, and the screen says so instead of pretending the
+  /// account still exists.
+  final bool otherProfileMissing;
 }
 
 class ChatUserPreview {
@@ -243,6 +250,7 @@ class ChatMessage {
     localImagePath: entry['local_image_path'] as String?,
     createdAt: DateTime.parse(entry['created_at'] as String),
     status: entry['state'] as String? ?? 'sending',
+    replyTo: ChatReply.fromData(entry['reply_to'] as Map<String, dynamic>?),
   );
 
   /// Firestore documents written before this version of the rules only carry
@@ -559,8 +567,10 @@ class ChatRepository {
         participants[otherUserId] as Map<String, dynamic>? ??
         const <String, dynamic>{};
     Map<String, dynamic>? profile;
+    var profileMissing = false;
     try {
       profile = await _getPublicProfile(otherUserId);
+      profileMissing = profile == null;
     } catch (error, stackTrace) {
       _logFailure('load a conversation member profile', error, stackTrace);
     }
@@ -576,6 +586,7 @@ class ChatRepository {
       otherAvatarUrl:
           otherUser['avatarUrl'] as String? ??
           otherUser['avatar_url'] as String?,
+      otherProfileMissing: profileMissing,
     );
   }
 
@@ -744,6 +755,7 @@ class ChatRepository {
     required String conversationId,
     required String text,
     required String clientId,
+    ChatReply? replyTo,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) throw StateError('Message cannot be empty');
@@ -755,6 +767,9 @@ class ChatRepository {
       'content': trimmed,
       'created_at': createdAt.toIso8601String(),
       'state': 'queued',
+      // The quote travels with the queued send, so a reply typed offline still
+      // arrives as a reply once the network comes back.
+      if (replyTo != null) 'reply_to': replyTo.toMap(),
     };
     await _pendingQueue.enqueue(entry);
     return ChatMessage.fromPending(entry);
@@ -816,6 +831,9 @@ class ChatRepository {
                   conversationId: conversationId,
                   clientId: clientId,
                   content: entry['content'] as String? ?? '',
+                  replyTo: ChatReply.fromData(
+                    entry['reply_to'] as Map<String, dynamic>?,
+                  ),
                 )
               : await sendImage(
                   conversationId: conversationId,

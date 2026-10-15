@@ -231,6 +231,26 @@ class AppStrings {
       : '$current/$maximum characters';
   String get noMessagesYet => isArabic ? 'مافيش رسائل لسه' : 'No messages yet';
 
+  // ---------- chat screen ----------
+  String get today => isArabic ? 'النهاردة' : 'Today';
+  String get yesterday => isArabic ? 'أمس' : 'Yesterday';
+  String get typing => isArabic ? 'يكتب…' : 'typing…';
+  String get replyAction => isArabic ? 'رد' : 'Reply';
+  String get deleteForMe => isArabic ? 'حذف عندي' : 'Delete for me';
+  String get deleteForEveryone =>
+      isArabic ? 'حذف لدى الجميع' : 'Delete for everyone';
+  String get messageDeleted =>
+      isArabic ? 'الرسالة دي اتحذفت' : 'This message was deleted';
+  String replyingTo(String name) => isArabic ? 'رد على $name' : 'Reply to $name';
+  String get offlineBanner => isArabic
+      ? 'مفيش إنترنت. الرسائل هتتبعت لما الشبكة ترجع.'
+      : 'No internet. Messages will send when the connection is back.';
+  String get userUnavailable => isArabic
+      ? 'الحساب ده بقى محذوف'
+      : 'This account is no longer available';
+  String get emoji => isArabic ? 'إيموجي' : 'Emoji';
+  String get youLabel => isArabic ? 'أنت' : 'You';
+
   // ---------- chats list: preview of a message without text ----------
   String get chatPreviewPhoto => isArabic ? 'صورة' : 'Photo';
   String get chatPreviewVideo => isArabic ? 'فيديو' : 'Video';
