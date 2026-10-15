@@ -273,6 +273,9 @@ class ChatMessage {
 
   factory ChatMessage.fromPending(Map<String, dynamic> entry) {
     final attachment = ChatAttachmentDraft.fromQueueFields(entry);
+    final stickerId = entry['sticker_id'] is String
+        ? entry['sticker_id'] as String
+        : null;
     // A queued upload still has to reach Storage, so the bubble shows the file
     // on this device. A GIF carries the public url it will be written with.
     final localPath = attachment != null && attachment.needsUpload
@@ -288,7 +291,10 @@ class ChatMessage {
       localImagePath: localPath,
       createdAt: DateTime.parse(entry['created_at'] as String),
       status: entry['state'] as String? ?? 'sending',
-      type: attachment?.type ?? ChatMessageType.text,
+      type: stickerId != null
+          ? ChatMessageType.sticker
+          : (attachment?.type ?? ChatMessageType.text),
+      stickerId: stickerId,
       // Only a document is named to the receiver; a photo keeps its random
       // staging name, which would show up as a meaningless label.
       fileName: attachment?.type == ChatMessageType.file
@@ -897,10 +903,11 @@ class ChatRepository {
     required String text,
     required String clientId,
     ChatAttachmentDraft? attachment,
+    String? stickerId,
     ChatReply? replyTo,
   }) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty && attachment == null) {
+    if (trimmed.isEmpty && attachment == null && stickerId == null) {
       throw StateError('Message cannot be empty');
     }
     final staged = attachment == null
@@ -918,6 +925,8 @@ class ChatRepository {
       'created_at': DateTime.now().toUtc().toIso8601String(),
       'state': 'queued',
       if (staged != null) ...staged.toQueueFields(),
+      // A bundled sticker is only an id, so the queue can carry it whole.
+      'sticker_id': ?stickerId,
       // The quote travels with the queued send, so a reply typed offline still
       // arrives as a reply once the network comes back.
       if (replyTo != null) 'reply_to': replyTo.toMap(),
@@ -982,7 +991,17 @@ class ChatRepository {
             entry['reply_to'] as Map<String, dynamic>?,
           );
           draft = ChatAttachmentDraft.fromQueueFields(entry);
-          final message = draft == null
+          final stickerId = entry['sticker_id'] is String
+              ? entry['sticker_id'] as String
+              : null;
+          final message = stickerId != null
+              ? await sendSticker(
+                  conversationId: conversationId,
+                  stickerId: stickerId,
+                  clientId: clientId,
+                  replyTo: replyTo,
+                )
+              : draft == null
               ? await _insertMessage(
                   conversationId: conversationId,
                   clientId: clientId,

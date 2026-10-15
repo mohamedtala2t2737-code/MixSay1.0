@@ -112,7 +112,9 @@ class ChatAttachmentDraft {
     final size = entry[_sizeKey];
     final caption = entry[_captionKey];
     final duration = entry[_durationKey];
+    final sticker = entry['sticker_id'];
     return (type == null || type is String) &&
+        (sticker == null || sticker is String) &&
         (path == null || (path is String && path.isNotEmpty)) &&
         (name == null || name is String) &&
         (size == null || (size is int && size >= 0)) &&

@@ -27,6 +27,7 @@ import 'package:social_chat/features/chat/chat_message_bubble.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
+import 'package:social_chat/features/chat/chat_stickers.dart';
 import 'package:social_chat/features/chat/chat_time_labels.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -53,6 +54,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _sending = false;
   bool _offline = false;
   bool _showEmojiPicker = false;
+  bool _showStickerPicker = false;
   bool _otherTyping = false;
   bool _claimingTyping = false;
   ChatMessage? _replyingTo;
@@ -349,6 +351,55 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           SnackBar(content: Text(_attachmentFailureMessage(error))),
+        );
+    }
+  }
+
+  /// Sends a sticker from a bundled pack: one document write, no upload, and
+  /// the receiver paints the same asset from the id.
+  Future<void> _sendSticker(String stickerId) async {
+    if (_sending) return;
+    final replyingToSnapshot = _replyingTo;
+    final replyTo = replyingToSnapshot == null
+        ? null
+        : ChatReply.quoteFrom(replyingToSnapshot);
+    setState(() {
+      _sending = true;
+      _replyingTo = null;
+    });
+    final repository = ref.read(chatRepositoryProvider);
+    final clientId = repository.createClientId();
+    try {
+      final connected = await _hasNetworkConnection();
+      final message = connected
+          ? await repository.sendSticker(
+              conversationId: widget.conversationId,
+              stickerId: stickerId,
+              clientId: clientId,
+              replyTo: replyTo,
+            )
+          : await repository.queueMessage(
+              conversationId: widget.conversationId,
+              text: '',
+              clientId: clientId,
+              stickerId: stickerId,
+              replyTo: replyTo,
+            );
+      if (!mounted) return;
+      _insertOrReplaceMessage(message);
+      setState(() => _sending = false);
+      _scrollToBottom();
+    } catch (error) {
+      debugPrint('Unable to send sticker: $error');
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _replyingTo = replyingToSnapshot;
+      });
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text(AppStrings.of(context).actionFailed)),
         );
     }
   }
@@ -993,6 +1044,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   children: [
                     if (_showEmojiPicker)
                       ChatEmojiPicker(onSelected: _insertEmoji),
+                    if (_showStickerPicker)
+                      ChatStickerPicker(onSelected: _sendSticker),
                     if (_replyingTo != null)
                       _ReplyDraft(
                         preview: ChatReply.quoteFrom(_replyingTo!),
@@ -1016,6 +1069,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                     ? Icons.keyboard_outlined
                                     : Icons.emoji_emotions_outlined,
                               ),
+                            ),
+                          // A sticker type is gated by every sticker source, so
+                          // this disappears when the plan has none.
+                          if (!ChatMessageType.sticker.isGated)
+                            IconButton(
+                              tooltip: s.stickers,
+                              onPressed: () => setState(() {
+                                _showStickerPicker = !_showStickerPicker;
+                                if (_showStickerPicker)
+                                  _showEmojiPicker = false;
+                              }),
+                              icon: const Icon(Icons.sticky_note_2_outlined),
                             ),
                           // Hidden completely while the free plan is in force, so
                           // nobody can reach a control that would cost money.

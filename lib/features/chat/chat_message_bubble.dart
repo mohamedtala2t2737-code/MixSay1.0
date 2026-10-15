@@ -7,6 +7,7 @@ import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
+import 'package:social_chat/features/chat/chat_stickers.dart';
 import 'package:social_chat/features/chat/chat_time_labels.dart';
 
 /// One message in the thread: the bubble, the quoted reply it carries, its
@@ -46,6 +47,14 @@ class ChatMessageBubble extends StatelessWidget {
       localImagePath != null ||
       imageUrl != null ||
       message.inferredType() == ChatMessageType.image;
+
+  /// A bundled sticker is the picture itself with no bubble behind it: the
+  /// artwork carries its own shape, and a coloured card under it reads as a
+  /// photo that failed to load.
+  bool get _isBundledSticker =>
+      message.type == ChatMessageType.sticker &&
+      message.mediaPath == null &&
+      message.stickerId != null;
 
   String _replyAuthorName(AppStrings strings) {
     final reply = message.replyTo;
@@ -97,16 +106,20 @@ class ChatMessageBubble extends StatelessWidget {
               onLongPress: message.deletedForEveryone ? null : onLongPress,
               child: Container(
                 margin: const EdgeInsets.symmetric(vertical: 4),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: bubbleColor,
-                  borderRadius: BorderRadiusDirectional.only(
-                    topStart: const Radius.circular(16),
-                    topEnd: const Radius.circular(16),
-                    bottomStart: Radius.circular(isOutgoing ? 16 : 4),
-                    bottomEnd: Radius.circular(isOutgoing ? 4 : 16),
-                  ),
-                ),
+                padding: _isBundledSticker
+                    ? EdgeInsets.zero
+                    : const EdgeInsets.all(8),
+                decoration: _isBundledSticker
+                    ? null
+                    : BoxDecoration(
+                        color: bubbleColor,
+                        borderRadius: BorderRadiusDirectional.only(
+                          topStart: const Radius.circular(16),
+                          topEnd: const Radius.circular(16),
+                          bottomStart: Radius.circular(isOutgoing ? 16 : 4),
+                          bottomEnd: Radius.circular(isOutgoing ? 4 : 16),
+                        ),
+                      ),
                 child: message.deletedForEveryone
                     ? Row(
                         mainAxisSize: MainAxisSize.min,
@@ -135,6 +148,8 @@ class ChatMessageBubble extends StatelessWidget {
                               author: _replyAuthorName(strings),
                               preview: _replyPreview(strings),
                             ),
+                          if (_isBundledSticker)
+                            _StickerContent(stickerId: message.stickerId),
                           if (_showsMedia)
                             _ImageContent(
                               localImagePath: localImagePath,
@@ -256,6 +271,56 @@ class _ReplyQuote extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The picture of a bundled sticker, looked up from the id the message
+/// carries. An id from a pack this build does not have shows the same
+/// placeholder a broken photo does, because the message itself is real.
+class _StickerContent extends StatelessWidget {
+  const _StickerContent({required this.stickerId});
+
+  final String? stickerId;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final asset = chatStickerAssetOf(stickerId);
+    if (asset == null) {
+      return Padding(
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.sticky_note_2_outlined,
+              size: 20,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              AppStrings.of(context).chatPreviewSticker,
+              style: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Image.asset(
+        asset,
+        width: 132,
+        height: 132,
+        fit: BoxFit.contain,
+        semanticLabel: stickerId,
+        errorBuilder: (_, _, _) =>
+            const Icon(Icons.image_not_supported_outlined),
       ),
     );
   }
