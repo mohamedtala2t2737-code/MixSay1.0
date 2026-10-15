@@ -22,6 +22,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   Timestamp,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -48,6 +49,9 @@ const conversationId = (a, b) => {
   return `${members[0].length}_${members[0]}${members[1]}`;
 };
 const CONVERSATION = conversationId(ALICE, BOB);
+
+// A thread that does not exist yet, used by the create tests.
+const newId = conversationId(ALICE, MALLORY);
 
 const validMessage = {
   senderId: ALICE,
@@ -398,6 +402,383 @@ await check('an outsider cannot delete it', async () => {
 });
 
 await seed();
+console.log('\nmessages: typed payloads');
+const ownPath = (uid, name) => `chats/${CONVERSATION}/${uid}/${name}`;
+const withType = (messageId, type, extra) => ({
+  ...validMessage,
+  clientId: messageId,
+  content: '',
+  type,
+  ...extra,
+});
+// Each accepted write needs its own document id: the first check in a seeded
+// generation creates it, and a later setDoc on the same id would be tested as
+// an update instead of a create.
+await check('an image message pointing at the sender own upload is accepted', async () => {
+  await assertSucceeds(
+    setDoc(
+      messageRef(ALICE, 'm-image'),
+      withType('m-image', 'image', { mediaUrl: ownPath(ALICE, 'm-image.jpg') }),
+    ),
+  );
+});
+await check('an image message pointing at another sender folder is refused', async () => {
+  await assertFails(
+    setDoc(
+      messageRef(ALICE, 'm-image-others'),
+      withType('m-image-others', 'image', {
+        mediaUrl: ownPath(BOB, 'm-image-others.jpg'),
+      }),
+    ),
+  );
+});
+await check('a video message is accepted', async () => {
+  await assertSucceeds(
+    setDoc(
+      messageRef(ALICE, 'm-video'),
+      withType('m-video', 'video', {
+        mediaUrl: ownPath(ALICE, 'm-video.mp4'),
+        thumbUrl: ownPath(ALICE, 'm-video_thumb.jpg'),
+        durationMs: 42,
+        fileSize: 8 * 1024 * 1024,
+      }),
+    ),
+  );
+});
+await check('a voice message is accepted', async () => {
+  await assertSucceeds(
+    setDoc(
+      messageRef(ALICE, 'm-voice'),
+      withType('m-voice', 'voice', {
+        mediaUrl: ownPath(ALICE, 'm-voice.m4a'),
+        durationMs: 4000,
+        fileSize: 200 * 1024,
+      }),
+    ),
+  );
+});
+await check('a file message is accepted', async () => {
+  await assertSucceeds(
+    setDoc(
+      messageRef(ALICE, 'm-file'),
+      withType('m-file', 'file', {
+        mediaUrl: ownPath(ALICE, 'report.pdf'),
+        fileName: 'report.pdf',
+        fileSize: 1024 * 1024,
+      }),
+    ),
+  );
+});
+await check('a bundled sticker is accepted without any upload', async () => {
+  await assertSucceeds(
+    setDoc(
+      messageRef(ALICE, 'm-sticker'),
+      withType('m-sticker', 'sticker', { stickerId: 'starter:cat' }),
+    ),
+  );
+});
+await check('a sticker with no id is refused', async () => {
+  await assertFails(
+    setDoc(
+      messageRef(ALICE, 'm-sticker-bare'),
+      withType('m-sticker-bare', 'sticker'),
+    ),
+  );
+});
+await check('a gif may only point at an external url', async () => {
+  await assertSucceeds(
+    setDoc(
+      messageRef(ALICE, 'm-gif'),
+      withType('m-gif', 'gif', { mediaUrl: 'https://tenor.example/cat.gif' }),
+    ),
+  );
+  await assertFails(
+    setDoc(
+      messageRef(ALICE, 'm-gif-local'),
+      withType('m-gif-local', 'gif', { mediaUrl: ownPath(ALICE, 'cat.gif') }),
+    ),
+  );
+});
+await check('an unknown message type is refused', async () => {
+  await assertFails(
+    setDoc(
+      messageRef(ALICE, 'm-unknown'),
+      withType('m-unknown', 'location', { mediaUrl: null }),
+    ),
+  );
+});
+await check('a text message carrying media is refused', async () => {
+  await assertFails(
+    setDoc(messageRef(ALICE, 'm-text-media'), {
+      ...validMessage,
+      clientId: 'm-text-media',
+      mediaUrl: ownPath(ALICE, 'm-text-media.jpg'),
+    }),
+  );
+});
+await check('a file over its per-type ceiling is refused', async () => {
+  await assertFails(
+    setDoc(
+      messageRef(ALICE, 'm-voice-heavy'),
+      withType('m-voice-heavy', 'voice', {
+        mediaUrl: ownPath(ALICE, 'm-voice-heavy.m4a'),
+        fileSize: 9 * 1024 * 1024,
+      }),
+    ),
+  );
+});
+await check('a voice message longer than ten minutes is refused', async () => {
+  await assertFails(
+    setDoc(
+      messageRef(ALICE, 'm-voice-long'),
+      withType('m-voice-long', 'voice', {
+        mediaUrl: ownPath(ALICE, 'm-voice-long.m4a'),
+        durationMs: 900000,
+      }),
+    ),
+  );
+});
+
+await seed();
+console.log('\nmessages: replies and hiding');
+await check('a reply quoting a message is accepted', async () => {
+  await assertSucceeds(
+    setDoc(messageRef(ALICE, 'msg9'), {
+      ...validMessage,
+      clientId: 'msg9',
+      replyTo: { messageId: 'msg2', senderId: BOB, content: 'ahlan', type: 'text' },
+    }),
+  );
+});
+await check('a reply quote longer than 300 characters is refused', async () => {
+  await assertFails(
+    setDoc(messageRef(ALICE, 'msg10'), {
+      ...validMessage,
+      clientId: 'msg10',
+      replyTo: {
+        messageId: 'msg2',
+        senderId: BOB,
+        content: 'a'.repeat(301),
+        type: 'text',
+      },
+    }),
+  );
+});
+await check('a reply without a type is refused', async () => {
+  await assertFails(
+    setDoc(messageRef(ALICE, 'msg11'), {
+      ...validMessage,
+      clientId: 'msg11',
+      replyTo: { messageId: 'msg2', senderId: BOB, content: 'ahlan' },
+    }),
+  );
+});
+await check('a reply naming an unknown message type is refused', async () => {
+  await assertFails(
+    setDoc(messageRef(ALICE, 'msg12'), {
+      ...validMessage,
+      clientId: 'msg12',
+      replyTo: { messageId: 'msg2', senderId: BOB, content: 'ahlan', type: 'voice_note' },
+    }),
+  );
+});
+await check('either member can hide a message from themself', async () => {
+  await assertSucceeds(
+    updateDoc(messageRef(ALICE, 'msg1'), {
+      deletedFor: arrayUnion(ALICE),
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(messageRef(BOB, 'msg1'), { deletedFor: arrayUnion(BOB) }),
+  );
+});
+await check('hiding a message cannot hide it from somebody else', async () => {
+  await assertFails(
+    updateDoc(messageRef(ALICE, 'msg1'), { deletedFor: arrayUnion(BOB) }),
+  );
+  await assertFails(
+    updateDoc(messageRef(ALICE, 'msg1'), { deletedFor: arrayUnion(MALLORY) }),
+  );
+});
+await check('hiding a message cannot undo an earlier hide', async () => {
+  // ALICE has already hidden msg1, so a second hide for her is a no-op and is
+  // refused; so is any write that drops a hide or swaps in the other member.
+  await assertFails(
+    updateDoc(messageRef(ALICE, 'msg1'), { deletedFor: arrayUnion(ALICE) }),
+  );
+  await assertSucceeds(
+    updateDoc(messageRef(ALICE, 'msg2'), { deletedFor: arrayUnion(ALICE) }),
+  );
+  await assertFails(updateDoc(messageRef(ALICE, 'msg2'), { deletedFor: [] }));
+  await assertFails(
+    updateDoc(messageRef(ALICE, 'msg2'), { deletedFor: [BOB] }),
+  );
+});
+await check('hiding and read receipts are separate writes', async () => {
+  // The rules let one write change either the status or the hide list, never
+  // both, so ChatRepository marks read and hides for me as two updates.
+  await assertSucceeds(
+    setDoc(messageRef(ALICE, 'msg17'), {
+      ...validMessage,
+      clientId: 'msg17',
+    }),
+  );
+  await assertFails(
+    updateDoc(messageRef(BOB, 'msg17'), {
+      status: 'delivered',
+      deletedFor: arrayUnion(BOB),
+    }),
+  );
+  await assertSucceeds(
+    updateDoc(messageRef(BOB, 'msg17'), { status: 'delivered' }),
+  );
+  await assertSucceeds(
+    updateDoc(messageRef(BOB, 'msg17'), { deletedFor: arrayUnion(BOB) }),
+  );
+});
+await check('the sender can delete a message for everyone', async () => {
+  await assertSucceeds(
+    updateDoc(messageRef(ALICE, 'msg1'), { deletedForEveryone: true }),
+  );
+});
+await check('the receiver cannot delete for everyone', async () => {
+  await assertFails(
+    updateDoc(messageRef(BOB, 'msg1'), { deletedForEveryone: true }),
+  );
+});
+await check('delete for everyone cannot be written twice or combined', async () => {
+  // The previous check already hid msg1 from everyone.
+  await assertFails(
+    updateDoc(messageRef(ALICE, 'msg1'), { deletedForEveryone: true }),
+  );
+  await assertFails(
+    updateDoc(messageRef(ALICE, 'msg2'), {
+      deletedForEveryone: true,
+      content: 'rewritten',
+    }),
+  );
+  // BOB owns msg2, so he gets exactly one such write.
+  await assertSucceeds(
+    updateDoc(messageRef(BOB, 'msg2'), { deletedForEveryone: true }),
+  );
+  await assertFails(
+    updateDoc(messageRef(BOB, 'msg2'), { deletedForEveryone: true }),
+  );
+});
+await check('a new message cannot be born deleted for everyone', async () => {
+  await assertFails(
+    setDoc(messageRef(ALICE, 'msg13'), {
+      ...validMessage,
+      clientId: 'msg13',
+      deletedForEveryone: true,
+    }),
+  );
+});
+await check('a new message cannot arrive already hidden', async () => {
+  await assertFails(
+    setDoc(messageRef(ALICE, 'msg14'), {
+      ...validMessage,
+      clientId: 'msg14',
+      deletedFor: [MALLORY],
+    }),
+  );
+  await assertFails(
+    setDoc(messageRef(ALICE, 'msg15'), {
+      ...validMessage,
+      clientId: 'msg15',
+      deletedFor: [ALICE],
+    }),
+  );
+  await assertFails(
+    setDoc(messageRef(ALICE, 'msg16'), {
+      ...validMessage,
+      clientId: 'msg16',
+      deletedFor: [BOB],
+    }),
+  );
+});
+
+await seed();
+console.log('\nconversations: typing and preview metadata');
+const conversationRef = (uid) => doc(db(uid), 'conversations', CONVERSATION);
+await check('a member can set their own typing flag', async () => {
+  await assertSucceeds(updateDoc(conversationRef(ALICE), { 'typing.alice': true }));
+});
+await check('a member cannot set the other side typing flag', async () => {
+  await assertSucceeds(updateDoc(conversationRef(ALICE), { 'typing.alice': true }));
+  await assertFails(updateDoc(conversationRef(ALICE), { 'typing.bob': true }));
+});
+await check('typing may only hold booleans', async () => {
+  await assertFails(updateDoc(conversationRef(ALICE), { 'typing.alice': 'yes' }));
+});
+await check('typing may not name a stranger', async () => {
+  await assertFails(updateDoc(conversationRef(ALICE), { 'typing.mallory': true }));
+});
+await check('an outsider cannot write typing at all', async () => {
+  await assertFails(updateDoc(conversationRef(MALLORY), { 'typing.mallory': true }));
+});
+await check('the preview may record the message type and its author', async () => {
+  await assertSucceeds(
+    updateDoc(conversationRef(ALICE), {
+      lastMessageContent: null,
+      lastMessageAt: Timestamp.now(),
+      lastMessageType: 'image',
+      lastSenderId: ALICE,
+    }),
+  );
+});
+await check('an unknown preview type is refused', async () => {
+  await assertFails(
+    updateDoc(conversationRef(ALICE), { lastMessageType: 'audio_link' }),
+  );
+});
+await check('the preview author must be a member', async () => {
+  await assertFails(
+    updateDoc(conversationRef(ALICE), { lastSenderId: MALLORY }),
+  );
+});
+await check('a new conversation may start with an empty typing map', async () => {
+  await assertSucceeds(
+    setDoc(doc(db(ALICE), 'conversations', newId), {
+      members: [ALICE, MALLORY].sort(),
+      participants: {
+        [ALICE]: { username: ALICE, fullName: `Test ${ALICE}`, avatarUrl: null },
+        [MALLORY]: {
+          username: MALLORY,
+          fullName: `Test ${MALLORY}`,
+          avatarUrl: null,
+        },
+      },
+      lastMessageContent: null,
+      lastMessageAt: null,
+      unreadCounts: { [ALICE]: 0, [MALLORY]: 0 },
+      typing: { [ALICE]: false, [MALLORY]: false },
+      createdAt: Timestamp.now(),
+    }),
+  );
+});
+await check('a new conversation cannot claim a message already arrived', async () => {
+  await assertFails(
+    setDoc(doc(db(ALICE), 'conversations', newId), {
+      members: [ALICE, MALLORY].sort(),
+      participants: {
+        [ALICE]: { username: ALICE, fullName: `Test ${ALICE}`, avatarUrl: null },
+        [MALLORY]: {
+          username: MALLORY,
+          fullName: `Test ${MALLORY}`,
+          avatarUrl: null,
+        },
+      },
+      lastMessageContent: null,
+      lastMessageAt: null,
+      lastMessageType: 'image',
+      unreadCounts: { [ALICE]: 0, [MALLORY]: 0 },
+      createdAt: Timestamp.now(),
+    }),
+  );
+});
+
+await seed();
 console.log('\nconversation counters');
 await check('a member can raise the other side by one', async () => {
   await assertSucceeds(
@@ -442,7 +823,6 @@ await check('a conversation can never be deleted by a client', async () => {
 
 await seed();
 console.log('\ncreating conversations');
-const newId = conversationId(ALICE, MALLORY);
 await check('a member can open a conversation with a valid profile copy', async () => {
   await assertSucceeds(
     setDoc(doc(db(ALICE), 'conversations', newId), {
@@ -777,13 +1157,77 @@ await check('the other participant can read chat media', async () => {
     getDownloadURL(ref(storage, `chats/${CONVERSATION}/${ALICE}/photo.png`)),
   );
 });
-await check('non-image chat media is refused', async () => {
+await check('chat media of an unknown content type is refused', async () => {
   const storage = user(ALICE).storage();
   await assertFails(
     uploadBytes(
-      ref(storage, `chats/${CONVERSATION}/${ALICE}/notes.txt`),
+      ref(storage, `chats/${CONVERSATION}/${ALICE}/notes.bin`),
       new Uint8Array([1, 2, 3]),
-      { contentType: 'text/plain' },
+      { contentType: 'multipart/form-data' },
+    ),
+  );
+});
+await check('a participant can upload the other chat media kinds', async () => {
+  const storage = user(ALICE).storage();
+  await assertSucceeds(
+    uploadBytes(
+      ref(storage, `chats/${CONVERSATION}/${ALICE}/clip.mp4`),
+      new Uint8Array([1, 2, 3]),
+      { contentType: 'video/mp4' },
+    ),
+  );
+  await assertSucceeds(
+    uploadBytes(
+      ref(storage, `chats/${CONVERSATION}/${ALICE}/note.m4a`),
+      new Uint8Array([1, 2, 3]),
+      { contentType: 'audio/mp4' },
+    ),
+  );
+  await assertSucceeds(
+    uploadBytes(
+      ref(storage, `chats/${CONVERSATION}/${ALICE}/report.pdf`),
+      new Uint8Array([1, 2, 3]),
+      { contentType: 'application/pdf' },
+    ),
+  );
+});
+await check('a chat image over 5 MB is refused', async () => {
+  const storage = user(ALICE).storage();
+  await assertFails(
+    uploadBytes(
+      ref(storage, `chats/${CONVERSATION}/${ALICE}/huge.jpg`),
+      new Uint8Array(5 * 1024 * 1024 + 1),
+      { contentType: 'image/jpeg' },
+    ),
+  );
+});
+await check('a chat voice note over 5 MB is refused', async () => {
+  const storage = user(ALICE).storage();
+  await assertFails(
+    uploadBytes(
+      ref(storage, `chats/${CONVERSATION}/${ALICE}/huge.m4a`),
+      new Uint8Array(5 * 1024 * 1024 + 1),
+      { contentType: 'audio/mp4' },
+    ),
+  );
+});
+await check('a chat document over 10 MB is refused', async () => {
+  const storage = user(ALICE).storage();
+  await assertFails(
+    uploadBytes(
+      ref(storage, `chats/${CONVERSATION}/${ALICE}/huge.pdf`),
+      new Uint8Array(10 * 1024 * 1024 + 1),
+      { contentType: 'application/pdf' },
+    ),
+  );
+});
+await check('a video may be larger than the image ceiling', async () => {
+  const storage = user(ALICE).storage();
+  await assertSucceeds(
+    uploadBytes(
+      ref(storage, `chats/${CONVERSATION}/${ALICE}/long.mp4`),
+      new Uint8Array(6 * 1024 * 1024),
+      { contentType: 'video/mp4' },
     ),
   );
 });

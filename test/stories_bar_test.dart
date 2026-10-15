@@ -82,6 +82,7 @@ class _FakeChatRepository implements ChatRepository {
     required String conversationId,
     required String text,
     required String clientId,
+    ChatReply? replyTo,
   }) async {
     sent.add('$conversationId:$text');
     return ChatMessage(

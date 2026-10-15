@@ -7,6 +7,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:social_chat/core/config/chat_features.dart';
+import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/pending_queue_service.dart';
 
 class ActiveChatState {
@@ -35,6 +37,8 @@ class ChatConversationPreview {
     this.lastMessageContent,
     this.lastMessageAt,
     this.unreadCount = 0,
+    this.lastMessageType = ChatMessageType.text,
+    this.lastSenderId,
   });
 
   final String id;
@@ -45,6 +49,11 @@ class ChatConversationPreview {
   final String? lastMessageContent;
   final DateTime? lastMessageAt;
   final int unreadCount;
+
+  /// What the last message was, so a photo shows as "Photo" instead of the
+  /// empty text field it carries.
+  final ChatMessageType lastMessageType;
+  final String? lastSenderId;
 
   ChatConversationPreview withPublicProfile(Map<String, dynamic>? profile) =>
       ChatConversationPreview(
@@ -58,6 +67,8 @@ class ChatConversationPreview {
         lastMessageContent: lastMessageContent,
         lastMessageAt: lastMessageAt,
         unreadCount: unreadCount,
+        lastMessageType: lastMessageType,
+        lastSenderId: lastSenderId,
       );
 
   factory ChatConversationPreview.fromFirestore(
@@ -93,6 +104,8 @@ class ChatConversationPreview {
       lastMessageContent: data['lastMessageContent'] as String?,
       lastMessageAt: _dateTime(data['lastMessageAt']),
       unreadCount: _asInt(unreadCounts[userId]),
+      lastMessageType: ChatMessageType.fromWire(data['lastMessageType']),
+      lastSenderId: data['lastSenderId'] as String?,
     );
   }
 }
@@ -139,6 +152,15 @@ class ChatMessage {
     this.documentSnapshot,
     required this.createdAt,
     required this.status,
+    this.type = ChatMessageType.text,
+    this.thumbUrl,
+    this.fileName,
+    this.fileSize,
+    this.durationMs,
+    this.stickerId,
+    this.replyTo,
+    this.deletedFor = const [],
+    this.deletedForEveryone = false,
   });
 
   final String id;
@@ -151,6 +173,24 @@ class ChatMessage {
   final QueryDocumentSnapshot<Map<String, dynamic>>? documentSnapshot;
   final DateTime createdAt;
   final String status;
+  final ChatMessageType type;
+  final String? thumbUrl;
+  final String? fileName;
+  final int? fileSize;
+  final int? durationMs;
+  final String? stickerId;
+  final ChatReply? replyTo;
+
+  /// The members who hid this message on their own side. Never the sender's
+  /// secret: `firestore.rules` only lets a member add themself.
+  final List<String> deletedFor;
+
+  /// The sender chose "delete for everyone", so both sides show a tombstone.
+  final bool deletedForEveryone;
+
+  /// Whether [userId] should see this message at all.
+  bool hiddenFor(String userId) =>
+      deletedForEveryone || deletedFor.contains(userId);
 
   factory ChatMessage.fromFirestore(
     QueryDocumentSnapshot<Map<String, dynamic>> document,
@@ -181,6 +221,15 @@ class ChatMessage {
       documentSnapshot: documentSnapshot,
       createdAt: _dateTime(data['createdAt']) ?? DateTime.now(),
       status: data['status'] as String? ?? 'sent',
+      type: ChatMessageType.fromWire(data['type']),
+      thumbUrl: data['thumbUrl'] as String?,
+      fileName: data['fileName'] as String?,
+      fileSize: data['fileSize'] is int ? data['fileSize'] as int : null,
+      durationMs: data['durationMs'] is int ? data['durationMs'] as int : null,
+      stickerId: data['stickerId'] as String?,
+      replyTo: ChatReply.fromData(data['replyTo'] as Map<String, dynamic>?),
+      deletedFor: (data['deletedFor'] as List<dynamic>? ?? []).cast<String>(),
+      deletedForEveryone: data['deletedForEveryone'] == true,
     );
   }
 
@@ -195,6 +244,74 @@ class ChatMessage {
     createdAt: DateTime.parse(entry['created_at'] as String),
     status: entry['state'] as String? ?? 'sending',
   );
+
+  /// Firestore documents written before this version of the rules only carry
+  /// the legacy fields, so a media message with no `type` still needs the right
+  /// label in the chats list.
+  ChatMessageType inferredType() =>
+      type == ChatMessageType.text && mediaPath != null
+      ? ChatMessageType.image
+      : type;
+}
+
+/// The quoted snapshot of the message a reply points at.
+///
+/// Only a short copy travels with the new message instead of a document
+/// reference, so rendering a reply costs no extra read and a message deleted
+/// for everyone still shows what was quoted. The rules cap [content] at the
+/// same 300 characters [ChatReply.quoteFrom] produces.
+class ChatReply {
+  const ChatReply({
+    required this.messageId,
+    required this.senderId,
+    required this.content,
+    required this.type,
+  });
+
+  static const maxContentLength = 300;
+
+  final String messageId;
+  final String senderId;
+  final String content;
+  final ChatMessageType type;
+
+  Map<String, dynamic> toMap() => {
+    'messageId': messageId,
+    'senderId': senderId,
+    'content': content,
+    'type': type.wireValue,
+  };
+
+  /// Null for a message that quotes nothing, and for a malformed map, which an
+  /// older document can hold if it was written before the rules validated
+  /// `replyTo`.
+  static ChatReply? fromData(Map<String, dynamic>? data) {
+    if (data == null) return null;
+    final messageId = data['messageId'] as String? ?? '';
+    if (messageId.isEmpty) return null;
+    return ChatReply(
+      messageId: messageId,
+      senderId: data['senderId'] as String? ?? '',
+      content: data['content'] as String? ?? '',
+      type: ChatMessageType.fromWire(data['type']),
+    );
+  }
+
+  /// Truncates on whole code points so an emoji in the quoted text cannot be
+  /// cut in half.
+  static ChatReply quoteFrom(ChatMessage message) {
+    final runes = message.content.runes.toList();
+    return ChatReply(
+      messageId: message.id,
+      senderId: message.senderId,
+      content: String.fromCharCodes(
+        runes.length > maxContentLength
+            ? runes.sublist(0, maxContentLength)
+            : runes,
+      ),
+      type: message.inferredType(),
+    );
+  }
 }
 
 DateTime? _dateTime(dynamic value) {
@@ -539,16 +656,42 @@ class ChatRepository {
     required String conversationId,
     required String text,
     required String clientId,
+    ChatReply? replyTo,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) throw StateError('Message cannot be empty');
-    if (trimmed.length > 4000) {
-      throw ArgumentError.value(text.length, 'text', 'Maximum length is 4000');
+    if (trimmed.length > ChatFeatures.maxTextLength) {
+      throw ArgumentError.value(
+        text.length,
+        'text',
+        'Maximum length is ${ChatFeatures.maxTextLength}',
+      );
     }
     return _insertMessage(
       conversationId: conversationId,
       clientId: clientId,
       content: trimmed,
+      replyTo: replyTo,
+    );
+  }
+
+  /// A sticker from a pack bundled in the app: no upload, only the id, so the
+  /// message costs one document write and both sides render the same asset.
+  Future<ChatMessage> sendSticker({
+    required String conversationId,
+    required String stickerId,
+    required String clientId,
+    ChatReply? replyTo,
+  }) {
+    if (!ChatFeatures.anyStickerSource) {
+      throw StateError('Stickers are disabled');
+    }
+    return _insertMessage(
+      conversationId: conversationId,
+      clientId: clientId,
+      type: ChatMessageType.sticker,
+      stickerId: stickerId,
+      replyTo: replyTo,
     );
   }
 
@@ -556,6 +699,7 @@ class ChatRepository {
     required String conversationId,
     required Uint8List bytes,
     required String clientId,
+    ChatReply? replyTo,
   }) async {
     final senderId = _me;
     final path = 'chats/$conversationId/$senderId/$clientId.jpg';
@@ -568,7 +712,9 @@ class ChatRepository {
       return await _insertMessage(
         conversationId: conversationId,
         clientId: clientId,
+        type: ChatMessageType.image,
         mediaPath: path,
+        replyTo: replyTo,
       );
     } catch (error, stackTrace) {
       try {
@@ -734,6 +880,54 @@ class ChatRepository {
     await _messages(conversationId).doc(clientId).delete();
   }
 
+  /// Hide a message on this device only. The rules let either member add only
+  /// themself to `deletedFor`, so the other side keeps seeing it — which is why
+  /// re-adding an id that already contains me is skipped instead of written.
+  Future<void> deleteForMe({
+    required String conversationId,
+    required ChatMessage message,
+  }) async {
+    if (message.deletedFor.contains(_me)) return;
+    await _messages(conversationId).doc(message.id).update({
+      'deletedFor': FieldValue.arrayUnion([_me]),
+    });
+  }
+
+  /// The sender's "delete for everyone": one flag on their own document, which
+  /// both sides render as a tombstone. The rules allow it once and never let it
+  /// change any other field.
+  Future<void> deleteForEveryone({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    await _messages(conversationId).doc(messageId).update({
+      'deletedForEveryone': true,
+    });
+  }
+
+  /// Writes my typing flag, and nothing else. The rules refuse a write that
+  /// moves the other participant's flag, so a client can only claim to be
+  /// typing.
+  Future<void> setTyping(String conversationId, bool isTyping) async {
+    await _conversations.doc(conversationId).update({
+      'typing.$_me': isTyping,
+    });
+  }
+
+  /// Whether the other participant has their typing flag set. One document
+  /// listener, not a thread listener, so the chat screen does not pay for it
+  /// twice.
+  Stream<bool> watchOtherTyping(
+    String conversationId, {
+    required String otherUserId,
+  }) => _conversations
+      .doc(conversationId)
+      .snapshots()
+      .map((snapshot) {
+        final typing = snapshot.data()?['typing'] as Map<String, dynamic>?;
+        return typing?[otherUserId] == true;
+      });
+
   Future<void> markMessagesRead(String conversationId) async {
     final userId = _me;
     // Every message this app writes carries recipientId (see _insertMessage) and
@@ -829,40 +1023,98 @@ class ChatRepository {
     });
   }
 
+  /// The Firestore document for one outgoing message.
+  ///
+  /// It mirrors the `messages/{messageId}` create rule key for key: optional
+  /// fields are left out entirely rather than written as null, because the rule
+  /// validates each one that is present. `createdAt` is a server timestamp so
+  /// the thread order cannot be forged from the device.
+  @visibleForTesting
+  static Map<String, dynamic> messageFields({
+    required String senderId,
+    required String recipientId,
+    required String clientId,
+    required String content,
+    ChatMessageType type = ChatMessageType.text,
+    String? mediaPath,
+    String? thumbUrl,
+    String? fileName,
+    int? fileSize,
+    int? durationMs,
+    String? stickerId,
+    ChatReply? replyTo,
+  }) {
+    final fields = <String, dynamic>{
+      'senderId': senderId,
+      'recipientId': recipientId,
+      'clientId': clientId,
+      'content': content,
+      'mediaUrl': mediaPath,
+      'createdAt': FieldValue.serverTimestamp(),
+      'status': 'sent',
+      'type': type.wireValue,
+    };
+    if (thumbUrl != null) fields['thumbUrl'] = thumbUrl;
+    if (fileName != null) fields['fileName'] = fileName;
+    if (fileSize != null) fields['fileSize'] = fileSize;
+    if (durationMs != null) fields['durationMs'] = durationMs;
+    if (stickerId != null) fields['stickerId'] = stickerId;
+    if (replyTo != null) fields['replyTo'] = replyTo.toMap();
+    return fields;
+  }
+
+  /// The conversation-list fields for the message that was just written. The
+  /// preview text stays null for a message with no text; the list shows the
+  /// type label from [ChatConversationPreview.lastMessageType] instead, so no
+  /// English word is ever stored.
+  @visibleForTesting
+  static Map<String, dynamic> conversationFields({
+    required String recipientId,
+    required String content,
+    required ChatMessageType type,
+    required String senderId,
+  }) => {
+    'lastMessageContent': content.isEmpty ? null : content,
+    'lastMessageAt': FieldValue.serverTimestamp(),
+    'lastMessageType': type.wireValue,
+    'lastSenderId': senderId,
+    'unreadCounts.$recipientId': FieldValue.increment(1),
+  };
+
   Future<ChatMessage> _insertMessage({
     required String conversationId,
     required String clientId,
-    String? content,
+    String content = '',
+    ChatMessageType type = ChatMessageType.text,
     String? mediaPath,
+    String? thumbUrl,
+    String? fileName,
+    int? fileSize,
+    int? durationMs,
+    String? stickerId,
+    ChatReply? replyTo,
   }) async {
     final senderId = _me;
-    final trimmedContent = content?.trim() ?? '';
-    if (trimmedContent.length > 4000) {
+    final trimmedContent = content.trim();
+    if (trimmedContent.length > ChatFeatures.maxTextLength) {
       throw ArgumentError.value(
         trimmedContent.length,
         'content',
-        'Maximum length is 4000',
+        'Maximum length is ${ChatFeatures.maxTextLength}',
       );
     }
-    if (trimmedContent.isEmpty && (mediaPath == null || mediaPath.isEmpty)) {
-      throw StateError('Message must contain text or an image');
+    if (trimmedContent.isEmpty && !type.hasVisiblePayload) {
+      throw StateError('Message must contain text or an attachment');
     }
     final conversation = _conversations.doc(conversationId);
     final message = _messages(conversationId).doc(clientId);
     return _firestore.runTransaction((transaction) async {
       final existing = await transaction.get(message);
       if (existing.exists) {
-        return ChatMessage(
+        return ChatMessage.fromData(
           id: existing.id,
           conversationId: conversationId,
-          senderId: existing.data()?['senderId'] as String? ?? senderId,
-          content: existing.data()?['content'] as String? ?? '',
-          mediaPath:
-              existing.data()?['mediaPath'] as String? ??
-              existing.data()?['mediaUrl'] as String?,
-          clientId: clientId,
-          createdAt: _dateTime(existing.data()?['createdAt']) ?? DateTime.now(),
-          status: existing.data()?['status'] as String? ?? 'sent',
+          data: existing.data() ?? const {},
         );
       }
       final conversationSnapshot = await transaction.get(conversation);
@@ -877,31 +1129,48 @@ class ChatRepository {
       }
 
       final createdAt = DateTime.now();
-      transaction.set(message, {
-        'senderId': senderId,
-        'recipientId': recipientId,
-        'clientId': clientId,
-        'content': trimmedContent,
-        'mediaUrl': mediaPath,
-        'createdAt': FieldValue.serverTimestamp(),
-        'status': 'sent',
-      });
-      transaction.update(conversation, {
-        'lastMessageContent': trimmedContent.isNotEmpty
-            ? trimmedContent
-            : 'Photo',
-        'lastMessageAt': FieldValue.serverTimestamp(),
-        'unreadCounts.$recipientId': FieldValue.increment(1),
-      });
+      transaction.set(
+        message,
+        messageFields(
+          senderId: senderId,
+          recipientId: recipientId,
+          clientId: clientId,
+          content: trimmedContent,
+          type: type,
+          mediaPath: mediaPath,
+          thumbUrl: thumbUrl,
+          fileName: fileName,
+          fileSize: fileSize,
+          durationMs: durationMs,
+          stickerId: stickerId,
+          replyTo: replyTo,
+        ),
+      );
+      transaction.update(
+        conversation,
+        conversationFields(
+          recipientId: recipientId,
+          content: trimmedContent,
+          type: type,
+          senderId: senderId,
+        ),
+      );
       return ChatMessage(
         id: clientId,
         conversationId: conversationId,
         senderId: senderId,
-        content: content ?? '',
+        content: trimmedContent,
         mediaPath: mediaPath,
         clientId: clientId,
         createdAt: createdAt,
         status: 'sent',
+        type: type,
+        thumbUrl: thumbUrl,
+        fileName: fileName,
+        fileSize: fileSize,
+        durationMs: durationMs,
+        stickerId: stickerId,
+        replyTo: replyTo,
       );
     });
   }

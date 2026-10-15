@@ -62,6 +62,187 @@ service cloud.firestore {
       return members[0] == request.auth.uid ? members[1] : members[0];
     }
 
+    // ------------------------------------------------------------ chat media
+    // Kept in step with ChatMessageType and ChatFeatures in Dart: a message the
+    // server does not recognise is refused on write, never on read.
+    function chatMessageTypes() {
+      return ['text', 'image', 'video', 'file', 'voice', 'sticker', 'gif'];
+    }
+
+    // Byte ceilings per type. The app refuses an oversized file before it
+    // uploads; this is the backstop for anything that reaches the server.
+    function chatMediaSizeIsAllowed(type, size) {
+      return type == 'image'
+        ? size < 5 * 1024 * 1024
+        : type == 'video'
+          ? size < 25 * 1024 * 1024
+          : type == 'file'
+            ? size < 10 * 1024 * 1024
+            : type == 'voice'
+              ? size < 5 * 1024 * 1024
+              : true;
+    }
+
+    // The Storage layout for chat uploads: chats/{conversationId}/{senderId}/file
+    // Nobody may point a message at another pair's folder or another sender's.
+    function chatUploadPathIsMine(media, conversationId) {
+      let parts = media.split('/');
+      return parts.size() == 4
+        && parts[0] == 'chats'
+        && parts[1] == conversationId
+        && parts[2] == request.auth.uid;
+    }
+
+    function chatMessageCarriesWhatItClaims(message, type, conversationId) {
+      let media = message.mediaUrl;
+      return type == 'text'
+        ? media == null && message.content.size() > 0
+        : type == 'sticker'
+          ? (
+            media == null
+            && message.get('stickerId', null) is string
+            || (
+              media is string
+              && chatUploadPathIsMine(media, conversationId)
+            )
+          )
+          : type == 'gif'
+            ? media is string && media.matches('https://.*')
+            : media is string
+              && chatUploadPathIsMine(media, conversationId);
+    }
+
+    function chatReplyIsValid(reply) {
+      return reply.keys().hasOnly(['messageId', 'senderId', 'content', 'type'])
+        && reply.keys().hasAll(['messageId', 'senderId', 'content', 'type'])
+        && reply.messageId is string
+        && reply.messageId.size() <= 60
+        && reply.senderId is string
+        && reply.senderId.size() <= 60
+        && reply.content is string
+        && reply.content.size() <= 300
+        && reply.type in chatMessageTypes();
+    }
+
+    // A plain text message writes exactly the seven fields the app has always
+    // written, so sending keeps working against rules that are already
+    // deployed. Every field here beyond those seven belongs to a feature that
+    // needs this version published first.
+    function chatMessageFields() {
+      return [
+        'senderId',
+        'recipientId',
+        'clientId',
+        'content',
+        'mediaUrl',
+        'createdAt',
+        'status',
+        'type',
+        'thumbUrl',
+        'fileName',
+        'fileSize',
+        'durationMs',
+        'stickerId',
+        'replyTo',
+        'deletedFor',
+        'deletedForEveryone'
+      ];
+    }
+
+    function chatOptionalFieldsAreValid(message, type, conversationId) {
+      let fileSize = message.get('fileSize', null);
+      let fileName = message.get('fileName', null);
+      let durationMs = message.get('durationMs', null);
+      let thumbUrl = message.get('thumbUrl', null);
+      let stickerId = message.get('stickerId', null);
+      return (
+        fileSize == null
+        || (
+          fileSize is int
+          && fileSize >= 0
+          && chatMediaSizeIsAllowed(type, fileSize)
+        )
+      )
+      && (
+        fileName == null
+        || (
+          fileName is string
+          && fileName.size() > 0
+          && fileName.size() <= 255
+        )
+      )
+      && (
+        durationMs == null
+        || (durationMs is int && durationMs >= 0 && durationMs <= 600000)
+      )
+      && (
+        thumbUrl == null
+        || (
+          thumbUrl is string
+          && (
+            thumbUrl.matches('https://.*')
+            || chatUploadPathIsMine(thumbUrl, conversationId)
+          )
+        )
+      )
+      && (
+        stickerId == null
+        || (
+          stickerId is string
+          && stickerId.size() > 0
+          && stickerId.size() <= 120
+        )
+      );
+    }
+
+    function chatMessageIsValidOnCreate(message, conversationId) {
+      let type = message.get('type', 'text');
+      let replyTo = message.get('replyTo', null);
+      let deletedFor = message.get('deletedFor', null);
+      let deletedForEveryone = message.get('deletedForEveryone', null);
+      return message.content is string
+        && message.content.size() <= 4000
+        && (message.mediaUrl is string || message.mediaUrl == null)
+        && type in chatMessageTypes()
+        && chatMessageCarriesWhatItClaims(message, type, conversationId)
+        && chatOptionalFieldsAreValid(message, type, conversationId)
+        && (replyTo == null || chatReplyIsValid(replyTo))
+        // A brand new message is visible to both sides. Hiding is an update, so
+        // a sender can never quietly deliver something the receiver cannot see.
+        && deletedFor == null
+        && (deletedForEveryone == null || deletedForEveryone == false);
+    }
+
+    // sent -> delivered -> read, and never back.
+    function chatStatusMovesForward(before, after) {
+      return (
+        (before == 'sent' && (after == 'delivered' || after == 'read'))
+        || (before == 'delivered' && after == 'read')
+      );
+    }
+
+    // A hide-from-me write may add exactly the writer and never anybody else,
+    // it may never remove a hide that is already there, and it may not be a
+    // no-op (re-hiding a message the writer has already hidden changes nothing,
+    // so ChatRepository never sends it and the rules refuse it). Set equality
+    // with `==` is not available here, so the change is described by its counts.
+    function chatDeletedForAddsOnlyMe(before, after) {
+      // Rules functions have no early return, so a value that is not a list is
+      // swapped for an empty one and rejected by the type test below.
+      let beforeList = (before is list) ? before : [];
+      let afterList = (after is list) ? after : [];
+      let added = afterList.toSet().difference(beforeList.toSet());
+      let removed = beforeList.toSet().difference(afterList.toSet());
+      // Sets have no `has()` here, so the writer is located with list
+      // membership: one new entry that is not yet present must be the writer.
+      return before is list
+        && after is list
+        && removed.size() == 0
+        && added.size() == 1
+        && request.auth.uid in after
+        && !(request.auth.uid in before);
+    }
+
     // ---------------------------------------------------------------- users
     match /users/{userId} {
       allow read: if signedIn() && request.auth.uid == userId;
@@ -250,7 +431,10 @@ service cloud.firestore {
           'lastMessageContent',
           'lastMessageAt',
           'unreadCounts',
-          'createdAt'
+          'createdAt',
+          'lastMessageType',
+          'lastSenderId',
+          'typing'
         ])
         && request.resource.data.members is list
         && request.resource.data.members.size() == 2
@@ -262,6 +446,20 @@ service cloud.firestore {
           + request.resource.data.members[1]
         && request.resource.data.lastMessageContent == null
         && request.resource.data.lastMessageAt == null
+        && request.resource.data.get('lastMessageType', null) == null
+        && request.resource.data.get('lastSenderId', null) == null
+        // A brand new thread has nobody typing. The map appears with the first
+        // typing write and is then kept to one boolean per member.
+        && (
+          request.resource.data.get('typing', null) == null
+          || (
+            request.resource.data.typing is map
+            && request.resource.data.typing.keys().hasOnly(
+              request.resource.data.members
+            )
+            && request.resource.data.typing.values().hasOnly([false])
+          )
+        )
         && request.resource.data.createdAt is timestamp
         && request.resource.data.unreadCounts is map
         && request.resource.data.unreadCounts.keys().hasOnly(
@@ -300,7 +498,10 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'lastMessageContent',
           'lastMessageAt',
-          'unreadCounts'
+          'unreadCounts',
+          'lastMessageType',
+          'lastSenderId',
+          'typing'
         ])
         && (
           request.resource.data.lastMessageContent == null
@@ -312,6 +513,38 @@ service cloud.firestore {
         && (
           request.resource.data.lastMessageAt == null
           || request.resource.data.lastMessageAt is timestamp
+        )
+        // The preview label and its author move together with the preview, and
+        // only to something the app can actually write.
+        && (
+          request.resource.data.get('lastMessageType', null) == null
+          || request.resource.data.lastMessageType in chatMessageTypes()
+        )
+        && (
+          request.resource.data.get('lastSenderId', null) == null
+          || request.resource.data.lastSenderId in resource.data.members
+        )
+        // Typing is one boolean per member and a member may only move their own
+        // flag, so nobody can fake "the other side is typing" or silence it.
+        && (
+          request.resource.data.get('typing', null) == null
+          || (
+            request.resource.data.typing is map
+            && request.resource.data.typing.keys().hasOnly(
+              resource.data.members
+            )
+            && request.resource.data.typing.values().hasOnly([true, false])
+            && (
+              resource.data.get('typing', null) == null
+              || request.resource.data.typing.get(
+                otherMember(resource.data.members),
+                false
+              ) == resource.data.typing.get(
+                otherMember(resource.data.members),
+                false
+              )
+            )
+          )
         )
         && request.resource.data.unreadCounts.keys().hasOnly(
           resource.data.members
@@ -340,9 +573,6 @@ service cloud.firestore {
           && request.query.limit <= 100;
 
         allow create: if isConversationMember(conversationId)
-          && request.resource.data.senderId == request.auth.uid
-          && request.resource.data.content is string
-          && request.resource.data.content.size() <= 4000
           && request.resource.data.keys().hasAll([
             'senderId',
             'clientId',
@@ -355,15 +585,8 @@ service cloud.firestore {
             // marked read.
             'recipientId'
           ])
-          && request.resource.data.keys().hasOnly([
-            'senderId',
-            'clientId',
-            'content',
-            'mediaUrl',
-            'createdAt',
-            'status',
-            'recipientId'
-          ])
+          && request.resource.data.keys().hasOnly(chatMessageFields())
+          && request.resource.data.senderId == request.auth.uid
           && request.resource.data.recipientId != request.auth.uid
           && request.resource.data.recipientId in get(
             /databases/$(database)/documents/conversations/$(conversationId)
@@ -371,30 +594,44 @@ service cloud.firestore {
           && request.resource.data.clientId == messageId
           && request.resource.data.createdAt is timestamp
           && request.resource.data.status == 'sent'
-          && (
-            request.resource.data.mediaUrl is string
-            || request.resource.data.mediaUrl == null
-          )
-          && (
-            request.resource.data.content.size() > 0
-            || request.resource.data.mediaUrl is string
-          );
+          && chatMessageIsValidOnCreate(request.resource.data, conversationId);
 
-        // Status only moves forward: sent -> delivered -> read.
-        allow update: if isConversationMember(conversationId)
-          && resource.data.senderId != request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status'])
-          && (
-            (
-              resource.data.status == 'sent'
-              && request.resource.data.status in ['delivered', 'read']
+        // Status only moves forward: sent -> delivered -> read, and it stays the
+        // only thing the receiving side may write, so a reader cannot rewrite a
+        // message they never sent.
+        allow update: if isConversationMember(conversationId) && (
+          (
+            resource.data.senderId != request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+              ['status']
             )
-            || (
-              resource.data.status == 'delivered'
-              && request.resource.data.status == 'read'
+            && chatStatusMovesForward(
+              resource.data.status,
+              request.resource.data.status
             )
-          );
+          )
+          // "Delete for me": either side can hide a message from their own view,
+          // and only from themselves.
+          || (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'deletedFor'
+            ])
+            && chatDeletedForAddsOnlyMe(
+              resource.data.get('deletedFor', []),
+              request.resource.data.deletedFor
+            )
+          )
+          // "Delete for everyone": the sender only, at most once, and nothing
+          // else about the message changes.
+          || (
+            resource.data.senderId == request.auth.uid
+            && resource.data.get('deletedForEveryone', null) != true
+            && request.resource.data.get('deletedForEveryone', null) == true
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+              ['deletedForEveryone']
+            )
+          )
+        );
         // Only the sender may remove a message, never the recipient. The app
         // offers this for queued/failed sends: without it, a send that quietly
         // reached Firestore while the local queue still said "failed" could

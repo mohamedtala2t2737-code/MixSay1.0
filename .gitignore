@@ -57,6 +57,7 @@ app.*.map.json
 # Environment / secrets
 .env
 .env.*
+chat.secrets.json
 /android/key.properties
 **/key.properties
 *.keystore

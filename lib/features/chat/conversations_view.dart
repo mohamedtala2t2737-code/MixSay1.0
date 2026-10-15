@@ -25,6 +25,15 @@ class ConversationsListView extends ConsumerWidget {
         '${local.minute.toString().padLeft(2, '0')}';
   }
 
+  /// The last message, or the kind of thing it was when it carried no text.
+  /// The type comes from the conversation document, so this costs no read.
+  String _previewText(ChatConversationPreview item, AppStrings strings) {
+    final content = item.lastMessageContent;
+    if (content != null && content.isNotEmpty) return content;
+    if (item.lastMessageAt == null) return strings.noMessagesYet;
+    return item.lastMessageType.previewLabel(strings);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = AppStrings.of(context);
@@ -33,7 +42,9 @@ class ConversationsListView extends ConsumerWidget {
     return conversations.when(
       loading: () => const LoadingView(),
       error: (error, stackTrace) {
-        debugPrint('Unable to load conversations: ${describeFirestoreFailure(error)}');
+        debugPrint(
+          'Unable to load conversations: ${describeFirestoreFailure(error)}',
+        );
         debugPrintStack(stackTrace: stackTrace);
         return ErrorStateView(
           message: s.loadFailed,
@@ -88,7 +99,7 @@ class ConversationsListView extends ConsumerWidget {
                   ],
                 ),
                 subtitle: Text(
-                  item.lastMessageContent ?? s.noMessagesYet,
+                  _previewText(item, s),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

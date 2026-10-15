@@ -230,6 +230,16 @@ class AppStrings {
       ? '${number(current)}/${number(maximum)} حرف'
       : '$current/$maximum characters';
   String get noMessagesYet => isArabic ? 'مافيش رسائل لسه' : 'No messages yet';
+
+  // ---------- chats list: preview of a message without text ----------
+  String get chatPreviewPhoto => isArabic ? 'صورة' : 'Photo';
+  String get chatPreviewVideo => isArabic ? 'فيديو' : 'Video';
+  String get chatPreviewFile => isArabic ? 'ملف' : 'File';
+  String get chatPreviewVoice => isArabic ? 'رسالة صوتية' : 'Voice message';
+  String get chatPreviewSticker => isArabic ? 'ملصق' : 'Sticker';
+  String get chatPreviewGif => isArabic ? 'صورة متحركة' : 'GIF';
+  String get chatPreviewMessage => isArabic ? 'رسالة' : 'Message';
+
   String get startConversation => isArabic
       ? 'ابدأ محادثة مع أي شخص من حسابه أو البحث.'
       : 'Start a conversation from a profile or search.';
