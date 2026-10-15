@@ -6,6 +6,7 @@ import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/utils/time_ago.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
+import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
 import 'package:social_chat/features/notifications/data/notification_repository.dart';
 import 'package:social_chat/features/notifications/presentation/notification_providers.dart';
 
@@ -88,6 +89,10 @@ class NotificationsTab extends ConsumerWidget {
                       title: s.noNotifications,
                     )
                   : ListView.separated(
+                      // Clearance for the transparent bottom bar.
+                      padding: const EdgeInsets.only(
+                        bottom: MixSayBottomBar.barHeight,
+                      ),
                       itemCount: items.length,
                       separatorBuilder: (context, index) =>
                           const Divider(height: 1),

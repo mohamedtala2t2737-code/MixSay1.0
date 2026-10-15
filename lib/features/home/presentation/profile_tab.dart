@@ -9,6 +9,7 @@ import 'package:social_chat/features/auth/presentation/sign_out_action.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
 import 'package:social_chat/features/home/presentation/create_post_sheet.dart';
+import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
 import 'package:social_chat/features/home/presentation/widgets/post_card.dart';
 
 class ProfileTab extends ConsumerWidget {
@@ -32,7 +33,8 @@ class ProfileTab extends ConsumerWidget {
       },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 24),
+        // Bottom clearance = the usual gap plus the transparent bar.
+        padding: const EdgeInsets.only(bottom: 24 + MixSayBottomBar.barHeight),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

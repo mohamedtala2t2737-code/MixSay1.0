@@ -29,7 +29,6 @@ class MixSayBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    final theme = Theme.of(context);
 
     final items = <_NavItem>[
       _NavItem(
@@ -67,20 +66,18 @@ class MixSayBottomBar extends StatelessWidget {
       ),
     ];
 
+    // Transparent and edgeless: the shell sets `extendBody: true` so the feed
+    // scrolls underneath this bar, and each tab leaves [barHeight] of bottom
+    // clearance so nothing sits permanently behind it.
     return Material(
-      color: theme.colorScheme.surface,
+      type: MaterialType.transparency,
       child: SafeArea(
         top: false,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: theme.dividerColor)),
-          ),
-          child: SizedBox(
-            height: barHeight,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [for (final item in items) Expanded(child: item)],
-            ),
+        child: SizedBox(
+          height: barHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [for (final item in items) Expanded(child: item)],
           ),
         ),
       ),
@@ -118,7 +115,7 @@ class _NavItem extends StatelessWidget {
           child: Badge.count(
             count: badge,
             isLabelVisible: badge > 0,
-            child: Icon(icon, size: 26, color: color),
+            child: Icon(icon, size: 30, color: color),
           ),
         ),
       ),

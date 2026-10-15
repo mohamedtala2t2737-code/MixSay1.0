@@ -10,6 +10,7 @@ import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
+import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
 
 /// The conversation list without a Scaffold, so it can be the shell's Messages
 /// tab as well as the standalone `/conversations` route.
@@ -51,6 +52,9 @@ class ConversationsListView extends ConsumerWidget {
           onRefresh: () async => ref.invalidate(conversationsProvider),
           child: ListView.separated(
             physics: const AlwaysScrollableScrollPhysics(),
+            // The transparent bottom bar overlays the list; this keeps the last
+            // conversation reachable above it.
+            padding: const EdgeInsets.only(bottom: MixSayBottomBar.barHeight),
             itemCount: items.length,
             separatorBuilder: (context, index) => const Divider(height: 1),
             itemBuilder: (context, index) {
