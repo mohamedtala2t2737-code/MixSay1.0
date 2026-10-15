@@ -12,6 +12,7 @@ import 'package:social_chat/features/auth/presentation/screens/sign_up_screen.da
 import 'package:social_chat/features/chat/chat_screen.dart';
 import 'package:social_chat/features/chat/conversations_screen.dart';
 import 'package:social_chat/features/home/presentation/main_shell.dart';
+import 'package:social_chat/features/profile/presentation/follow_graph_screen.dart';
 import 'package:social_chat/features/search/presentation/search_screen.dart';
 
 /// Rebuilds the router whenever the Firebase auth state changes,
@@ -49,13 +50,19 @@ final appRouter = GoRouter(
     if (isAuthRoute) {
       return user.emailVerified ? '/home' : '/check-email';
     }
-    final isChatRoute =
+    final isStandaloneRoute =
         state.matchedLocation.startsWith('/chat/') ||
-        state.matchedLocation == '/conversations' ||
-        state.matchedLocation == '/search';
-    return isChatRoute
-        ? null
-        : state.matchedLocation == '/home'
+        const [
+          '/conversations',
+          '/search',
+          '/followers',
+          '/following',
+        ].any(
+          (path) =>
+              state.matchedLocation == path ||
+              state.matchedLocation.startsWith('$path/'),
+        );
+    return isStandaloneRoute || state.matchedLocation == '/home'
         ? null
         : '/home';
   },
@@ -83,5 +90,24 @@ final appRouter = GoRouter(
       builder: (context, state) =>
           ChatScreen(conversationId: state.pathParameters['conversationId']!),
     ),
+    GoRoute(
+      path: '/followers',
+      builder: (context, state) => _followGraph(state, followers: true),
+    ),
+    GoRoute(
+      path: '/following',
+      builder: (context, state) => _followGraph(state, followers: false),
+    ),
   ],
 );
+
+/// The follower or following list of an account. The profile screen names the
+/// account it opened; without that the signed-in user's own list is meant.
+FollowGraphScreen _followGraph(GoRouterState state, {required bool followers}) {
+  return FollowGraphScreen(
+    userId:
+        state.uri.queryParameters['userId'] ??
+        FirebaseAuth.instance.currentUser!.uid,
+    followers: followers,
+  );
+}

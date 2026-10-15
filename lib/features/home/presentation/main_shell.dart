@@ -10,9 +10,9 @@ import 'package:social_chat/features/chat/conversations_view.dart';
 import 'package:social_chat/features/home/presentation/create_post_sheet.dart';
 import 'package:social_chat/features/home/presentation/home_tab.dart';
 import 'package:social_chat/features/home/presentation/notifications_tab.dart';
-import 'package:social_chat/features/home/presentation/profile_tab.dart';
 import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
 import 'package:social_chat/features/notifications/presentation/notification_providers.dart';
+import 'package:social_chat/features/profile/presentation/profile_screen.dart';
 
 /// The four-tab shell: Home, Messages, Notifications, Profile, with a flat
 /// bottom bar whose centre item opens the create-post sheet. Tab order mirrors
@@ -28,7 +28,9 @@ class MainShell extends ConsumerStatefulWidget {
 class _MainShellState extends ConsumerState<MainShell> {
   int _tab = 0;
 
-  PreferredSizeWidget _buildAppBar(AppStrings s, BuildContext context) {
+  /// The bar each tab shows above its content. The profile tab returns `null`
+  /// because it paints its own account bar.
+  PreferredSizeWidget? _buildAppBar(AppStrings s, BuildContext context) {
     final settings = AppSettingsIconButton(
       icon: _tab == 0 ? Icons.menu_rounded : null,
     );
@@ -59,7 +61,7 @@ class _MainShellState extends ConsumerState<MainShell> {
         ],
       ),
       2 => AppBar(title: Text(s.notifications), actions: [settings]),
-      _ => AppBar(title: Text(s.profile), actions: [settings]),
+      _ => null,
     };
   }
 
@@ -79,7 +81,7 @@ class _MainShellState extends ConsumerState<MainShell> {
           HomeTab(),
           ConversationsListView(),
           NotificationsTab(),
-          ProfileTab(),
+          ProfileScreen(),
         ],
       ),
       bottomNavigationBar: MixSayBottomBar(

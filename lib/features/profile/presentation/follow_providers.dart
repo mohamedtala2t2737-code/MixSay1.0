@@ -41,7 +41,7 @@ final followingListProvider = FutureProvider.autoDispose
 ///
 /// Returns null when the write was refused, so the caller can show its own
 /// failure message without the repository knowing about widgets.
-Future<bool?> toggleFollow(Ref ref, String targetId) async {
+Future<bool?> toggleFollow(WidgetRef ref, String targetId) async {
   final repository = ref.read(followRepositoryProvider);
   final following = ref.read(isFollowingProvider(targetId)).value ?? false;
   try {

@@ -18,6 +18,8 @@ import 'package:social_chat/features/home/presentation/main_shell.dart';
 import 'package:social_chat/features/home/presentation/home_tab.dart';
 import 'package:social_chat/features/notifications/data/notification_repository.dart';
 import 'package:social_chat/features/notifications/presentation/notification_providers.dart';
+import 'package:social_chat/features/profile/data/follow_repository.dart';
+import 'package:social_chat/features/profile/presentation/follow_providers.dart';
 import 'package:social_chat/features/stories/data/story_repository.dart';
 import 'package:social_chat/features/stories/presentation/story_providers.dart';
 
@@ -34,6 +36,12 @@ Widget _harness(Locale locale) => ProviderScope(
     feedPostsProvider.overrideWith((ref) => Stream.value(const <FeedPost>[])),
     authorPostsProvider.overrideWith(
       (ref, authorId) => Stream.value(const <FeedPost>[]),
+    ),
+    followerCountProvider.overrideWith(
+      (ref, userId) async => const FollowCount(0),
+    ),
+    followingCountProvider.overrideWith(
+      (ref, userId) async => const FollowCount(0),
     ),
     activeStoriesProvider.overrideWith(
       (ref) => Stream.value(const <StoryGroup>[]),
@@ -237,7 +245,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(iconColor(Icons.account_circle_outlined), scheme.primary);
     expect(iconColor(Icons.home_filled), scheme.onSurfaceVariant);
-    expect(find.text('My posts'), findsOneWidget);
+    // The profile tab paints its own bar, with the account handle in it.
+    expect(find.text('mixsay.user'), findsOneWidget);
+    expect(find.byType(AppBar), findsNothing);
 
     await tester.tap(find.byIcon(Icons.mail_outline_rounded));
     await tester.pumpAndSettle();
@@ -279,18 +289,18 @@ void main() {
     );
   });
 
-  testWidgets('tapping a tab swaps the AppBar title', (tester) async {
+  testWidgets('tapping a tab swaps the bar above the content', (tester) async {
     _usePhoneViewport(tester);
     await tester.pumpWidget(_harness(const Locale('en')));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byIcon(Icons.account_circle_outlined));
     await tester.pumpAndSettle();
-    expect(find.text('My posts'), findsOneWidget);
+    expect(find.text('mixsay.user'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.notifications_none_rounded));
     await tester.pumpAndSettle();
-    expect(find.text('My posts'), findsNothing);
+    expect(find.text('mixsay.user'), findsNothing);
 
     await tester.tap(find.byIcon(Icons.mail_outline_rounded));
     await tester.pumpAndSettle();

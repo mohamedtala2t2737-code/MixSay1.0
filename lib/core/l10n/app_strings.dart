@@ -381,6 +381,77 @@ class AppStrings {
   String get myPosts => isArabic ? 'منشوراتي' : 'My posts';
   String get noPostsYet =>
       isArabic ? 'لم تنشر أي شيء بعد' : 'You have not posted yet';
+
+  // ---------- profile screen ----------
+  String get postsStat => isArabic ? 'منشورات' : 'posts';
+  String get followersStat => isArabic ? 'متابع' : 'followers';
+  String get followingStat => isArabic ? 'أتابع' : 'following';
+  String get editProfile => isArabic ? 'تعديل الملف' : 'Edit profile';
+  String get shareProfile => isArabic ? 'مشاركة الملف' : 'Share profile';
+  String get changePhoto => isArabic ? 'تغيير الصورة' : 'Change photo';
+  String get switchAccounts => isArabic ? 'تبديل الحسابات' : 'Switch accounts';
+  String get postsTab => isArabic ? 'المنشورات' : 'Posts';
+  String get videosTab => isArabic ? 'الفيديوهات' : 'Videos';
+  String get repostsTab => isArabic ? 'إعادة النشر' : 'Reposts';
+  String get taggedTab => isArabic ? 'أنت مُشار' : 'Tagged';
+  String get noVideos => isArabic ? 'مافيش فيديوهات لسه' : 'No videos yet';
+  String get noReposts =>
+      isArabic ? 'مافيش إعادة نشر لسه' : 'Nothing reposted yet';
+  String get noTagged =>
+      isArabic ? 'مافيش حاجات اتعملك فيها إشارة' : 'Nothing tagged you in yet';
+  String get followersTitle => isArabic ? 'المتابعون' : 'Followers';
+  String get followingTitle => isArabic ? 'أتابع' : 'Following';
+  String get noFollowers => isArabic ? 'مافيش متابعين لسه' : 'No followers yet';
+  String get noFollowing =>
+      isArabic ? 'انت مش بتتابع حد لسه' : 'You are not following anyone yet';
+  String get follow => isArabic ? 'متابعة' : 'Follow';
+  String get followingButton => isArabic ? 'بتتابعه' : 'Following';
+  String get profileShared =>
+      isArabic ? 'تم نسخ اسم المستخدم' : 'Username copied';
+
+  /// Shown where a control matches the reference design but the app has no
+  /// backing feature yet (profile editing, archiving, and the like).
+  String get comingSoon => isArabic ? 'قريبًا' : 'Coming soon';
+  String get comingSoonMessage => isArabic
+      ? 'الجزء ده لسه بيتبني. مفيش بيانات اتغيّرت.'
+      : 'This part is still being built. Nothing has changed.';
+
+  // ---------- settings and activity ----------
+  String get settingsAndActivity =>
+      isArabic ? 'الإعدادات والنشاط' : 'Settings and activity';
+  String get searchSettingsHint =>
+      isArabic ? 'ابحث في الإعدادات' : 'Search settings';
+  String get noSettingsMatches =>
+      isArabic ? 'مافيش إعداد بهذا الاسم' : 'No setting matches that';
+  String get yourAccountSection => isArabic ? 'حسابك' : 'Your account';
+  String get howYouUseSection =>
+      isArabic ? 'إزاي بتستخدم MixSay' : 'How you use MixSay';
+  String get whoCanSeeSection =>
+      isArabic ? 'مين بيشوف محتواك' : 'Who can see your content';
+  String get supportSection => isArabic ? 'الدعم' : 'Support';
+  String get accountItem => isArabic ? 'الحساب' : 'Account';
+  String get accountItemSubtitle => isArabic
+      ? 'كلمة السر والأمان وبياناتك الشخصية'
+      : 'Password, security, personal details';
+  String get savedItem => isArabic ? 'المحفوظات' : 'Saved';
+  String get noSavedPosts =>
+      isArabic ? 'مافيش منشورات محفوظة لسه' : 'Nothing saved yet';
+  String get archiveItem => isArabic ? 'الأرشيف' : 'Archive';
+  String get yourActivityItem => isArabic ? 'نشاطك' : 'Your activity';
+  String get timeManagementItem => isArabic ? 'إدارة الوقت' : 'Time management';
+  String get accountPrivacyItem =>
+      isArabic ? 'خصوصية الحساب' : 'Account privacy';
+  String get publicValue => isArabic ? 'عام' : 'Public';
+  String get blockedItem => isArabic ? 'المحظورون' : 'Blocked';
+  String get helpItem => isArabic ? 'المساعدة' : 'Help';
+  String get aboutItem => isArabic ? 'عن MixSay' : 'About MixSay';
+  String get languageItemSubtitle =>
+      isArabic ? 'لغة التطبيق والنصوص' : 'App language and text';
+  String get appearanceItemSubtitle =>
+      isArabic ? 'فاتح أو غامق' : 'Light or dark';
+  String get notificationsItemSubtitle => isArabic
+      ? 'إشعارات الإعجاب والتعليقات والرسائل'
+      : 'Likes, comments and message alerts';
 }
 
 class AppStringsDelegate extends LocalizationsDelegate<AppStrings> {
