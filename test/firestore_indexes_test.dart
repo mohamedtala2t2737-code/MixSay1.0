@@ -34,11 +34,15 @@ void main() {
   }
 
   test('the conversation list query has a matching array-contains index', () {
-    // ChatRepository.watchConversations and markReceivedMessagesDelivered both
-    // filter `members` with arrayContains and order by lastMessageAt, so the
-    // index must use CONTAINS on members, not an ordering.
+    // ChatRepository.watchConversations, fetchOlderConversations (the cursor
+    // page) and markReceivedMessagesDelivered all filter `members` with
+    // arrayContains and order by lastMessageAt, so the index must use CONTAINS
+    // on members, not an ordering.
     expect(
-      indexFor('conversations', ['members CONTAINS', 'lastMessageAt DESCENDING']),
+      indexFor('conversations', [
+        'members CONTAINS',
+        'lastMessageAt DESCENDING',
+      ]),
       isNotNull,
       reason:
           'an arrayContains filter cannot be served by an ASCENDING index '
@@ -58,9 +62,8 @@ void main() {
   });
 
   test('every arrayContains query in the repository is indexed', () {
-    final source = File(
-      'lib/features/chat/chat_repository.dart',
-    ).readAsStringSync();
+    final source = File('lib/features/chat/chat_repository.dart')
+        .readAsStringSync();
 
     final arrayContainsFields = RegExp(
       r"where\(\s*'([A-Za-z]+)',\s*arrayContains:",
@@ -68,17 +71,14 @@ void main() {
 
     expect(arrayContainsFields, contains('members'));
     for (final field in arrayContainsFields) {
-      final hasContainsEntry = declaredIndexes
-          .cast<Map<String, dynamic>>()
-          .any(
-            (index) =>
-                (index['fields'] as List<dynamic>).cast<Map<String, dynamic>>(
-                ).any(
-                  (entry) =>
-                      entry['fieldPath'] == field &&
-                      entry['arrayConfig'] == 'CONTAINS',
-                ),
-          );
+      final hasContainsEntry = declaredIndexes.cast<Map<String, dynamic>>().any(
+        (index) =>
+            (index['fields'] as List<dynamic>).cast<Map<String, dynamic>>().any(
+              (entry) =>
+                  entry['fieldPath'] == field &&
+                  entry['arrayConfig'] == 'CONTAINS',
+            ),
+      );
       expect(hasContainsEntry, isTrue, reason: '$field needs an ARRAY index');
     }
   });

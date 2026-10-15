@@ -351,7 +351,10 @@ class ChatRepository {
        _pendingQueue = pendingQueue ?? PendingQueueService.instance;
 
   static const _messagePageSize = 30;
-  static const _conversationPageSize = 50;
+
+  /// Rows one page of the conversation list downloads. It is public because a
+  /// short page is how the list knows it has reached the end.
+  static const conversationPageSize = 50;
   static const _statusPageSize = 50;
   static const _profileCacheTtl = Duration(minutes: 10);
 
@@ -507,6 +510,28 @@ class ChatRepository {
     return conversationId;
   }
 
+  /// Turn fetched conversation documents into list rows, refreshing each row's
+  /// name and avatar from the live profile. A profile that cannot be read only
+  /// costs that one row its fresh copy; the conversation still shows.
+  Future<List<ChatConversationPreview>> _previewRows(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> documents,
+    String currentUserId,
+  ) => Future.wait(
+    documents.map((document) async {
+      final preview = ChatConversationPreview.fromFirestore(
+        document,
+        currentUserId,
+      );
+      try {
+        final profile = await _getPublicProfile(preview.otherUserId);
+        return preview.withPublicProfile(profile);
+      } catch (error, stackTrace) {
+        _logFailure('load a conversation member profile', error, stackTrace);
+        return preview;
+      }
+    }),
+  );
+
   Stream<List<ChatConversationPreview>> watchConversations({String? userId}) {
     final currentUserId = userId ?? _auth.currentUser?.uid;
     if (currentUserId == null) {
@@ -519,30 +544,30 @@ class ChatRepository {
     return _conversations
         .where('members', arrayContains: currentUserId)
         .orderBy('lastMessageAt', descending: true)
-        .limit(_conversationPageSize)
+        .limit(conversationPageSize)
         .snapshots()
-        .asyncMap((snapshot) async {
-          final items = await Future.wait(
-            snapshot.docs.map((document) async {
-              final preview = ChatConversationPreview.fromFirestore(
-                document,
-                currentUserId,
-              );
-              try {
-                final profile = await _getPublicProfile(preview.otherUserId);
-                return preview.withPublicProfile(profile);
-              } catch (error, stackTrace) {
-                _logFailure(
-                  'load a conversation member profile',
-                  error,
-                  stackTrace,
-                );
-                return preview;
-              }
-            }),
-          );
-          return items;
-        });
+        .asyncMap((snapshot) => _previewRows(snapshot.docs, currentUserId));
+  }
+
+  /// The page of the conversation list older than [before], which is the
+  /// `lastMessageAt` of the oldest row already on screen. Scrolling to the
+  /// bottom then costs one paged read instead of downloading every connection
+  /// the user has.
+  Future<List<ChatConversationPreview>> fetchOlderConversations({
+    String? userId,
+    required DateTime before,
+  }) async {
+    final currentUserId = userId ?? _auth.currentUser?.uid;
+    if (currentUserId == null) {
+      throw StateError('Sign in with Firebase to use chat');
+    }
+    final snapshot = await _conversations
+        .where('members', arrayContains: currentUserId)
+        .orderBy('lastMessageAt', descending: true)
+        .startAfter([Timestamp.fromDate(before)])
+        .limit(conversationPageSize)
+        .get();
+    return _previewRows(snapshot.docs, currentUserId);
   }
 
   Future<ChatConversationInfo> getConversationInfo(
@@ -918,18 +943,16 @@ class ChatRepository {
     required String conversationId,
     required String messageId,
   }) async {
-    await _messages(conversationId).doc(messageId).update({
-      'deletedForEveryone': true,
-    });
+    await _messages(conversationId)
+        .doc(messageId)
+        .update({'deletedForEveryone': true});
   }
 
   /// Writes my typing flag, and nothing else. The rules refuse a write that
   /// moves the other participant's flag, so a client can only claim to be
   /// typing.
   Future<void> setTyping(String conversationId, bool isTyping) async {
-    await _conversations.doc(conversationId).update({
-      'typing.$_me': isTyping,
-    });
+    await _conversations.doc(conversationId).update({'typing.$_me': isTyping});
   }
 
   /// Whether the other participant has their typing flag set. One document
@@ -938,13 +961,10 @@ class ChatRepository {
   Stream<bool> watchOtherTyping(
     String conversationId, {
     required String otherUserId,
-  }) => _conversations
-      .doc(conversationId)
-      .snapshots()
-      .map((snapshot) {
-        final typing = snapshot.data()?['typing'] as Map<String, dynamic>?;
-        return typing?[otherUserId] == true;
-      });
+  }) => _conversations.doc(conversationId).snapshots().map((snapshot) {
+    final typing = snapshot.data()?['typing'] as Map<String, dynamic>?;
+    return typing?[otherUserId] == true;
+  });
 
   Future<void> markMessagesRead(String conversationId) async {
     final userId = _me;
@@ -974,7 +994,7 @@ class ChatRepository {
     final conversations = await _conversations
         .where('members', arrayContains: userId)
         .orderBy('lastMessageAt', descending: true)
-        .limit(_conversationPageSize)
+        .limit(conversationPageSize)
         .get();
     for (final conversation in conversations.docs) {
       final unreadCounts =

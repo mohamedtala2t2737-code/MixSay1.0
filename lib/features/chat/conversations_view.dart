@@ -6,23 +6,119 @@ import 'package:go_router/go_router.dart';
 
 import 'package:social_chat/core/errors/app_exceptions.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/theme/app_typography.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
+import 'package:social_chat/features/chat/chat_time_labels.dart';
 import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
 
 /// The conversation list without a Scaffold, so it can be the shell's Messages
 /// tab as well as the standalone `/conversations` route.
-class ConversationsListView extends ConsumerWidget {
+class ConversationsListView extends ConsumerStatefulWidget {
   const ConversationsListView({super.key});
 
-  String _timeLabel(DateTime? dateTime) {
+  @override
+  ConsumerState<ConversationsListView> createState() =>
+      _ConversationsListViewState();
+}
+
+class _ConversationsListViewState extends ConsumerState<ConversationsListView> {
+  final _scrollController = ScrollController();
+  final _searchController = TextEditingController();
+
+  String _query = '';
+  List<ChatConversationPreview> _olderPages = const [];
+  bool _loadingMore = false;
+
+  /// Set once a page arrives shorter than the page size: everything the user
+  /// has is already on screen and scrolling must stop asking.
+  bool _atEnd = false;
+
+  /// The oldest `lastMessageAt` on screen, which is where the next page starts.
+  /// Set while building, read when the list hits its bottom.
+  DateTime? _oldestLoadedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Ask for the next page when the list is nearly at its end, so a user with
+  /// hundreds of connections only ever pays for the ones they scroll to.
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.extentAfter > 240) return;
+    _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    final before = _oldestLoadedAt;
+    if (before == null || _loadingMore || _atEnd) return;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await ref
+          .read(chatRepositoryProvider)
+          .fetchOlderConversations(before: before);
+      if (!mounted) return;
+      setState(() {
+        _olderPages = [..._olderPages, ...page];
+        // A short page is the last one; there is nothing older to ask for.
+        if (page.length < ChatRepository.conversationPageSize) _atEnd = true;
+        _loadingMore = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Unable to load older conversations: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      // Leave the cursor alone: pulling to refresh or scrolling again retries.
+      setState(() => _loadingMore = false);
+    }
+  }
+
+  /// The rows to show: the live page plus anything older the user has scrolled
+  /// to, with duplicates dropped and the search applied.
+  List<ChatConversationPreview> _rows(List<ChatConversationPreview> livePage) {
+    final merged = <String, ChatConversationPreview>{
+      for (final item in [...livePage, ..._olderPages]) item.id: item,
+    }.values.toList();
+    merged.sort(
+      (left, right) => (right.lastMessageAt ?? DateTime(0)).compareTo(
+        left.lastMessageAt ?? DateTime(0),
+      ),
+    );
+    _oldestLoadedAt = merged.isEmpty ? null : merged.last.lastMessageAt;
+    if (_query.isEmpty) return merged;
+    return merged
+        .where(
+          (item) =>
+              item.otherFullName.toLowerCase().contains(_query) ||
+              item.otherUsername.toLowerCase().contains(_query),
+        )
+        .toList();
+  }
+
+  /// Today gets a clock time; anything older gets the day, because "09:30" on a
+  /// message from last month would read as if it had just arrived.
+  String _whenLabel(DateTime? dateTime, AppStrings strings) {
     if (dateTime == null) return '';
     final local = dateTime.toLocal();
-    return '${local.hour.toString().padLeft(2, '0')}:'
-        '${local.minute.toString().padLeft(2, '0')}';
+    if (chatIsSameDay(local, DateTime.now())) {
+      return chatTimeLabel(strings, local);
+    }
+    return chatDateLabel(strings, local);
   }
 
   /// The last message, or the kind of thing it was when it carried no text.
@@ -34,8 +130,14 @@ class ConversationsListView extends ConsumerWidget {
     return item.lastMessageType.previewLabel(strings);
   }
 
+  void _onSearchChanged(String value) {
+    final query = value.trim().toLowerCase();
+    if (query == _query) return;
+    setState(() => _query = query);
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final conversations = ref.watch(conversationsProvider);
 
@@ -52,8 +154,8 @@ class ConversationsListView extends ConsumerWidget {
           onRetry: () => ref.invalidate(conversationsProvider),
         );
       },
-      data: (items) {
-        if (items.isEmpty) {
+      data: (livePage) {
+        if (livePage.isEmpty) {
           return EmptyStateView(
             icon: Icons.chat_bubble_outline,
             title: s.noMessagesYet,
@@ -61,68 +163,170 @@ class ConversationsListView extends ConsumerWidget {
           );
         }
 
+        final rows = _rows(livePage);
+        // The search field is row zero, a "nothing matches" note takes the
+        // place of the rows, and a spinner sits under them while the next page
+        // is in flight.
+        final itemCount =
+            1 + (rows.isEmpty ? 1 : rows.length) + (_loadingMore ? 1 : 0);
+
         return RefreshIndicator(
-          onRefresh: () async => ref.invalidate(conversationsProvider),
-          child: ListView.separated(
+          onRefresh: () async {
+            setState(() {
+              _olderPages = const [];
+              _atEnd = false;
+            });
+            ref.invalidate(conversationsProvider);
+            await ref.read(conversationsProvider.future);
+          },
+          child: ListView.builder(
+            controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             // The transparent bottom bar overlays the list; this keeps the last
             // conversation reachable above it.
             padding: const EdgeInsets.only(bottom: MixSayBottomBar.barHeight),
-            itemCount: items.length,
-            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemCount: itemCount,
             itemBuilder: (context, index) {
-              final item = items[index];
+              if (index == 0) {
+                return _SearchField(
+                  controller: _searchController,
+                  onChanged: _onSearchChanged,
+                  onCleared: () {
+                    _searchController.clear();
+                    _onSearchChanged('');
+                  },
+                );
+              }
+              final row = index - 1;
+              if (rows.isEmpty) {
+                return EmptyStateView(
+                  icon: Icons.search_off,
+                  title: s.noResults,
+                );
+              }
+              if (row >= rows.length) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              }
+
+              final item = rows[row];
               final displayName = item.otherFullName.isEmpty
                   ? item.otherUsername
                   : item.otherFullName;
-              return ListTile(
-                leading: UserAvatar(
-                  name: displayName,
-                  url: item.otherAvatarUrl,
-                  radius: 26,
-                ),
-                title: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
+              final hasUnread = item.unreadCount > 0;
+              final unreadStyle = TextStyle(
+                fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w600,
+              );
+              return Column(
+                children: [
+                  ListTile(
+                    leading: UserAvatar(
+                      name: displayName,
+                      url: item.otherAvatarUrl,
+                      radius: 26,
                     ),
-                    if (item.lastMessageAt != null)
-                      Text(
-                        _timeLabel(item.lastMessageAt),
-                        style: const TextStyle(fontSize: AppTypography.caption),
-                      ),
-                  ],
-                ),
-                subtitle: Text(
-                  _previewText(item, s),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: item.unreadCount > 0
-                    ? CircleAvatar(
-                        radius: 10,
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        child: Text(
-                          s.number(item.unreadCount),
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
+                    title: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: unreadStyle,
                           ),
                         ),
-                      )
-                    : null,
-                onTap: () => context.push('/chat/${item.id}'),
+                        if (item.lastMessageAt != null)
+                          Text(
+                            _whenLabel(item.lastMessageAt, s),
+                            style: const TextStyle(
+                              fontSize: AppTypography.caption,
+                            ),
+                          ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      _previewText(item, s),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: hasUnread
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                      ),
+                    ),
+                    trailing: hasUnread
+                        ? CircleAvatar(
+                            radius: 10,
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .primary,
+                            child: Text(
+                              s.number(item.unreadCount),
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          )
+                        : null,
+                    onTap: () => context.push('/chat/${item.id}'),
+                  ),
+                  if (row < rows.length - 1) const Divider(height: 1),
+                ],
               );
             },
           ),
         );
       },
+    );
+  }
+}
+
+/// The row that filters the list by name. Searching is local to the rows that
+/// are already loaded, so typing costs no Firestore read at all.
+class _SearchField extends StatelessWidget {
+  const _SearchField({
+    required this.controller,
+    required this.onChanged,
+    required this.onCleared,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onCleared;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: s.searchHint,
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: controller.text.isEmpty
+              ? null
+              : IconButton(icon: const Icon(Icons.close), onPressed: onCleared),
+          filled: true,
+          fillColor: AppColors.fieldFill(Theme.of(context).brightness),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 8,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(24),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
     );
   }
 }
