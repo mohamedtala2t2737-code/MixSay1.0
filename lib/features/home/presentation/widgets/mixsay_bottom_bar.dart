@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 
 /// Flat five-slot bottom bar: Home, Messages, create post, Notifications,
-/// Profile. The create button used to float above an arch cut into the middle
-/// of the bar; it is now an ordinary item in that same centre slot, so the bar
-/// is completely flat. A symmetric `Row` means the items mirror automatically
-/// when the app switches to RTL.
+/// Profile. Icons only — the name of each tab is a `Tooltip`, and screen
+/// readers still announce it. The create button used to float above an arch cut
+/// into the middle of the bar; it is now an ordinary item in that same centre
+/// slot, so the bar is completely flat. A symmetric `Row` means the items mirror
+/// automatically when the app switches to RTL.
 class MixSayBottomBar extends StatelessWidget {
   const MixSayBottomBar({
     super.key,
@@ -16,7 +17,9 @@ class MixSayBottomBar extends StatelessWidget {
     this.unreadCount = 0,
   });
 
-  static const barHeight = 68.0;
+  /// An icon-only bar: 56 is the height Material gives a plain bottom bar, and
+  /// nothing in it grows with the system text scale any more.
+  static const barHeight = 56.0;
 
   final int currentIndex;
   final ValueChanged<int> onSelect;
@@ -27,8 +30,6 @@ class MixSayBottomBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final theme = Theme.of(context);
-    // The label under each icon needs room to grow with the system text scale.
-    final slotHeight = MediaQuery.textScalerOf(context).scale(barHeight);
 
     final items = <_NavItem>[
       _NavItem(
@@ -75,7 +76,7 @@ class MixSayBottomBar extends StatelessWidget {
             border: Border(top: BorderSide(color: theme.dividerColor)),
           ),
           child: SizedBox(
-            height: slotHeight,
+            height: barHeight,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [for (final item in items) Expanded(child: item)],
@@ -114,25 +115,10 @@ class _NavItem extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Badge.count(
-                count: badge,
-                isLabelVisible: badge > 0,
-                child: Icon(icon, size: 26, color: color),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: color,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ],
+          child: Badge.count(
+            count: badge,
+            isLabelVisible: badge > 0,
+            child: Icon(icon, size: 26, color: color),
           ),
         ),
       ),

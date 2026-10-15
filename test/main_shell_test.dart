@@ -140,6 +140,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_centerX(tester, find.byTooltip('Create a post')), closeTo(195, 1));
+    // Icons only: no tab name is painted under the bar.
+    expect(find.text('Home'), findsNothing);
+    expect(find.byTooltip('Home'), findsOneWidget);
     expect(
       _centerX(tester, find.byIcon(Icons.home_filled)),
       lessThan(_centerX(tester, find.byIcon(Icons.mail_outline_rounded))),
@@ -238,7 +241,8 @@ void main() {
       Directionality.of(tester.element(find.byType(MainShell))),
       TextDirection.rtl,
     );
-    expect(find.text('الرئيسية'), findsOneWidget);
+    // The bar is icons only, so its Arabic names now live in the tooltips.
+    expect(find.byTooltip('الرئيسية'), findsOneWidget);
     expect(find.text('حكايتك'), findsOneWidget);
     expect(_centerX(tester, find.byTooltip('منشور جديد')), closeTo(195, 1));
     expect(
