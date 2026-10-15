@@ -10,6 +10,7 @@ import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/theme/app_typography.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
+import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
 import 'package:social_chat/features/chat/chat_time_labels.dart';
@@ -331,18 +332,30 @@ class _SearchField extends StatelessWidget {
   }
 }
 
-/// Asks who to message, opens (or creates) that conversation, and routes there.
-Future<void> startNewChat(BuildContext context, WidgetRef ref) async {
+/// Open (or create) the one-to-one thread with [userId] and route there. This
+/// is what every "Message" button in the app calls.
+///
+/// A thread with yourself is refused here as well as by the repository, because
+/// an entry point that appears on your own post or profile would otherwise open
+/// a chat with nobody to read it.
+Future<void> messageUser(
+  BuildContext context,
+  WidgetRef ref,
+  String userId,
+) async {
   final s = AppStrings.of(context);
-  final user = await showDialog<ChatUserPreview>(
-    context: context,
-    builder: (context) => const _NewChatDialog(),
-  );
-  if (user == null || !context.mounted) return;
+  final me = ref.read(currentUserIdProvider);
+  if (userId.isEmpty || userId == me) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(s.userUnavailable)));
+    return;
+  }
   try {
     final conversationId = await ref
         .read(chatRepositoryProvider)
-        .getOrCreateConversation(user.id);
+        .getOrCreateConversation(userId);
     if (!context.mounted) return;
     context.push('/chat/$conversationId');
   } catch (error, stackTrace) {
@@ -353,6 +366,16 @@ Future<void> startNewChat(BuildContext context, WidgetRef ref) async {
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(s.actionFailed)));
   }
+}
+
+/// Asks who to message, then opens that conversation.
+Future<void> startNewChat(BuildContext context, WidgetRef ref) async {
+  final user = await showDialog<ChatUserPreview>(
+    context: context,
+    builder: (context) => const _NewChatDialog(),
+  );
+  if (user == null || !context.mounted) return;
+  await messageUser(context, ref, user.id);
 }
 
 class _NewChatDialog extends ConsumerStatefulWidget {

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
@@ -30,10 +32,12 @@ ChatConversationPreview _chat(
 /// The repository the list may ask for older pages. Everything else about it
 /// is out of this screen's way, so an unfaked call is a loud failure.
 class _FakeChatRepository implements ChatRepository {
-  _FakeChatRepository({this.olderPages = const []});
+  _FakeChatRepository({this.olderPages = const [], this.failToOpen = false});
 
   final List<List<ChatConversationPreview>> olderPages;
+  final bool failToOpen;
   final List<DateTime> askedBefore = [];
+  final List<String> opened = [];
 
   @override
   Future<List<ChatConversationPreview>> fetchOlderConversations({
@@ -43,6 +47,13 @@ class _FakeChatRepository implements ChatRepository {
     askedBefore.add(before);
     if (olderPages.isEmpty) return const [];
     return olderPages.first;
+  }
+
+  @override
+  Future<String> getOrCreateConversation(String otherUserId) async {
+    opened.add(otherUserId);
+    if (failToOpen) throw StateError('profile not found');
+    return 'c-$otherUserId';
   }
 
   @override
@@ -288,4 +299,112 @@ void main() {
       expect(find.textContaining('Start a conversation'), findsOneWidget);
     });
   });
+
+  group('messaging somebody', () {
+    testWidgets('another person opens their thread', (tester) async {
+      final repository = _FakeChatRepository();
+      await _showMessageButton(tester, repository, userId: 'u-salma');
+
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+
+      expect(repository.opened, ['u-salma']);
+      expect(find.text('thread c-u-salma'), findsOneWidget);
+    });
+
+    testWidgets('yourself is refused before anything is written', (
+      tester,
+    ) async {
+      final repository = _FakeChatRepository();
+      await _showMessageButton(
+        tester,
+        repository,
+        userId: 'u-me',
+        signedInAs: 'u-me',
+      );
+
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+
+      expect(repository.opened, isEmpty);
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.text('thread c-u-me'), findsNothing);
+    });
+
+    testWidgets('a thread that cannot be opened says so instead of moving', (
+      tester,
+    ) async {
+      final repository = _FakeChatRepository(failToOpen: true);
+      await _showMessageButton(tester, repository, userId: 'u-salma');
+
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.text('thread c-u-salma'), findsNothing);
+    });
+  });
+}
+
+/// A button that calls the shared "Message" path, over a router whose only
+/// route past it reports which thread was opened.
+Future<void> _showMessageButton(
+  WidgetTester tester,
+  _FakeChatRepository repository, {
+  required String userId,
+  String signedInAs = 'u-me',
+}) async {
+  final router = GoRouter(
+    initialLocation: '/from',
+    routes: [
+      GoRoute(
+        path: '/from',
+        builder: (context, state) => _MessageButton(userId: userId),
+      ),
+      GoRoute(
+        path: '/chat/:conversationId',
+        builder: (context, state) =>
+            Text('thread ${state.pathParameters['conversationId']}'),
+      ),
+    ],
+  );
+  await _show(
+    tester,
+    ProviderScope(
+      overrides: [
+        chatRepositoryProvider.overrideWithValue(repository),
+        currentUserIdProvider.overrideWithValue(signedInAs),
+      ],
+      child: MaterialApp.router(
+        locale: const Locale('en'),
+        localizationsDelegates: const [
+          AppStrings.delegate,
+          ...GlobalMaterialLocalizations.delegates,
+        ],
+        supportedLocales: AppStrings.supportedLocales,
+        routerConfig: router,
+      ),
+    ),
+  );
+}
+
+class _MessageButton extends ConsumerStatefulWidget {
+  const _MessageButton({required this.userId});
+
+  final String userId;
+
+  @override
+  ConsumerState<_MessageButton> createState() => _MessageButtonState();
+}
+
+class _MessageButtonState extends ConsumerState<_MessageButton> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: TextButton(
+        onPressed: () => messageUser(context, ref, widget.userId),
+        child: const Text('go'),
+      ),
+    );
+  }
 }

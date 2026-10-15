@@ -2,13 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
+import 'package:social_chat/features/chat/conversations_view.dart';
 
 /// Username search reached from the home top bar; tapping a result opens (or
 /// creates) a conversation with that person.
@@ -54,21 +53,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   Future<void> _openChat(ChatUserPreview user) async {
-    final s = AppStrings.of(context);
-    try {
-      final conversationId = await ref
-          .read(chatRepositoryProvider)
-          .getOrCreateConversation(user.id);
-      if (!mounted) return;
-      context.push('/chat/$conversationId');
-    } catch (error, stackTrace) {
-      debugPrint('Unable to start conversation: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(s.actionFailed)));
-    }
+    // Same path the post menu and the follower lists use, and it refuses the
+    // row for your own account.
+    await messageUser(context, ref, user.id);
   }
 
   @override

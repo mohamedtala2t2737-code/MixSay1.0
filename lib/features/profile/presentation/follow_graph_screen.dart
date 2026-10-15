@@ -6,6 +6,7 @@ import 'package:social_chat/core/theme/app_spacing.dart';
 import 'package:social_chat/core/widgets/app_list_tile.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
+import 'package:social_chat/features/chat/conversations_view.dart';
 import 'package:social_chat/features/profile/data/follow_repository.dart';
 import 'package:social_chat/features/profile/presentation/follow_providers.dart';
 import 'package:social_chat/features/profile/presentation/widgets/profile_action_button.dart';
@@ -93,6 +94,9 @@ class _FollowRow extends ConsumerWidget {
       leading: UserAvatar(name: person.displayName, url: person.avatarUrl),
       title: person.displayName,
       subtitle: person.username,
+      // There is no screen for somebody else's account yet, so a person in
+      // these lists is reached by messaging them.
+      onTap: () => messageUser(context, ref, person.id),
       trailing: ProfileActionButton(
         label: following ? s.followingButton : s.follow,
         filled: !following,

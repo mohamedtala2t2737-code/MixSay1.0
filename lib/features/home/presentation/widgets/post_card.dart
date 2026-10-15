@@ -10,6 +10,7 @@ import 'package:social_chat/core/widgets/app_list_tile.dart';
 import 'package:social_chat/core/widgets/confirmation_dialog.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
+import 'package:social_chat/features/chat/conversations_view.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
 import 'package:social_chat/features/feed/presentation/saved_posts_provider.dart';
@@ -158,6 +159,16 @@ class _PostCardState extends ConsumerState<PostCard> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Someone else's post is the one place in the feed you can start
+              // a thread from; your own gets no such button.
+              if (!isMine)
+                AppListTile(
+                  leading: const Icon(Icons.mail_outline_rounded),
+                  title: s.message,
+                  onTap: () => closeAndRun(
+                    () => messageUser(context, ref, widget.post.authorId),
+                  ),
+                ),
               AppListTile(
                 leading: Icon(
                   Icons.flag_outlined,
