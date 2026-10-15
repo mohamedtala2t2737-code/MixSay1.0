@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
+import 'package:social_chat/features/chat/chat_media.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
 import 'package:social_chat/features/chat/chat_stickers.dart';
@@ -26,9 +27,15 @@ class ChatMessageBubble extends StatelessWidget {
     required this.otherDisplayName,
     this.imageUrl,
     this.localImagePath,
+    this.thumbnailUrl,
+    this.voicePlayback,
+    this.fileProgress,
     this.onRetry,
     this.onDeleteFailed,
     this.onImageTap,
+    this.onVideoTap,
+    this.onVoiceTap,
+    this.onFileTap,
     this.onLongPress,
   });
 
@@ -38,9 +45,24 @@ class ChatMessageBubble extends StatelessWidget {
   final String otherDisplayName;
   final Future<String>? imageUrl;
   final String? localImagePath;
+
+  /// The poster for a video message, which is a second Storage object beside
+  /// the clip. Null until the screen has a signed url for it.
+  final Future<String>? thumbnailUrl;
+
+  /// Where the voice note this bubble shows has got to. Only the message the
+  /// chat screen is playing gets one; every other bubble is handed null, which
+  /// is what lets one player serve a whole thread.
+  final ChatVoicePlayback? voicePlayback;
+
+  /// 0..1 while a received document is being downloaded, null when it is not.
+  final double? fileProgress;
   final VoidCallback? onRetry;
   final VoidCallback? onDeleteFailed;
   final VoidCallback? onImageTap;
+  final VoidCallback? onVideoTap;
+  final VoidCallback? onVoiceTap;
+  final VoidCallback? onFileTap;
   final VoidCallback? onLongPress;
 
   bool get _showsMedia =>
@@ -48,13 +70,11 @@ class ChatMessageBubble extends StatelessWidget {
       imageUrl != null ||
       message.inferredType() == ChatMessageType.image;
 
-  /// A bundled sticker is the picture itself with no bubble behind it: the
-  /// artwork carries its own shape, and a coloured card under it reads as a
-  /// photo that failed to load.
-  bool get _isBundledSticker =>
-      message.type == ChatMessageType.sticker &&
-      message.mediaPath == null &&
-      message.stickerId != null;
+  /// A sticker is the picture itself with no bubble behind it: the artwork
+  /// carries its own shape, and a coloured card under it reads as a photo that
+  /// failed to load. That holds whether the id came from a bundled pack or the
+  /// sender uploaded the picture themselves.
+  bool get _isSticker => message.type == ChatMessageType.sticker;
 
   String _replyAuthorName(AppStrings strings) {
     final reply = message.replyTo;
@@ -80,6 +100,49 @@ class ChatMessageBubble extends StatelessWidget {
     return TextDirection.rtl;
   }
 
+  /// The picture, clip, note or file the message carries, or null for a plain
+  /// message. Choosing here rather than in the widget tree keeps the bubble one
+  /// block plus an optional caption, whatever the type.
+  Widget? _mediaBlock() {
+    final type = message.type;
+    if (type == ChatMessageType.sticker && message.mediaPath == null) {
+      return _StickerContent(stickerId: message.stickerId);
+    }
+    if (type == ChatMessageType.video) {
+      return _VideoContent(
+        thumbnailUrl: thumbnailUrl,
+        durationMs: message.durationMs,
+        onTap: onVideoTap,
+      );
+    }
+    if (type == ChatMessageType.voice) {
+      return _VoiceContent(
+        isOutgoing: isOutgoing,
+        durationMs: message.durationMs,
+        playback: voicePlayback,
+        onTap: onVoiceTap,
+      );
+    }
+    if (type == ChatMessageType.file) {
+      return _FileContent(
+        fileName: message.fileName,
+        fileSize: message.fileSize,
+        progress: fileProgress,
+        isOutgoing: isOutgoing,
+        onTap: onFileTap,
+      );
+    }
+    if (_showsMedia) {
+      return _ImageContent(
+        localImagePath: localImagePath,
+        imageUrl: imageUrl,
+        isGif: type == ChatMessageType.gif,
+        onImageTap: onImageTap,
+      );
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -88,6 +151,7 @@ class ChatMessageBubble extends StatelessWidget {
         ? AppColors.brandPurple
         : theme.colorScheme.surfaceContainerHighest;
     final textColor = isOutgoing ? Colors.white : theme.colorScheme.onSurface;
+    final media = message.deletedForEveryone ? null : _mediaBlock();
 
     return Align(
       alignment: isOutgoing
@@ -106,10 +170,8 @@ class ChatMessageBubble extends StatelessWidget {
               onLongPress: message.deletedForEveryone ? null : onLongPress,
               child: Container(
                 margin: const EdgeInsets.symmetric(vertical: 4),
-                padding: _isBundledSticker
-                    ? EdgeInsets.zero
-                    : const EdgeInsets.all(8),
-                decoration: _isBundledSticker
+                padding: _isSticker ? EdgeInsets.zero : const EdgeInsets.all(8),
+                decoration: _isSticker
                     ? null
                     : BoxDecoration(
                         color: bubbleColor,
@@ -148,17 +210,10 @@ class ChatMessageBubble extends StatelessWidget {
                               author: _replyAuthorName(strings),
                               preview: _replyPreview(strings),
                             ),
-                          if (_isBundledSticker)
-                            _StickerContent(stickerId: message.stickerId),
-                          if (_showsMedia)
-                            _ImageContent(
-                              localImagePath: localImagePath,
-                              imageUrl: imageUrl,
-                              onImageTap: onImageTap,
-                            ),
+                          ?media,
                           if (message.content.isNotEmpty)
                             Padding(
-                              padding: _showsMedia
+                              padding: media != null
                                   ? const EdgeInsets.only(top: 6)
                                   : EdgeInsets.zero,
                               child: Text(
@@ -326,17 +381,20 @@ class _StickerContent extends StatelessWidget {
   }
 }
 
-/// The photo inside a bubble: the local file while the send is still queued,
-/// the Storage url once it has landed.
+/// The picture inside a bubble: the local file while the send is still queued,
+/// the Storage url once it has landed. A GIF takes the same path — the sender
+/// already handed a public url — and is only marked so it reads as animated.
 class _ImageContent extends StatelessWidget {
   const _ImageContent({
     required this.localImagePath,
     required this.imageUrl,
+    required this.isGif,
     this.onImageTap,
   });
 
   final String? localImagePath;
   final Future<String>? imageUrl;
+  final bool isGif;
   final VoidCallback? onImageTap;
 
   @override
@@ -379,25 +437,336 @@ class _ImageContent extends StatelessWidget {
           onTap: onImageTap,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: CachedNetworkImage(
-              imageUrl: snapshot.data!,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              memCacheWidth: 440,
-              placeholder: (_, _) => const SizedBox(
-                width: double.infinity,
-                height: 160,
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              errorWidget: (_, _, _) => const SizedBox(
-                width: double.infinity,
-                height: 160,
-                child: Icon(Icons.broken_image_outlined),
-              ),
+            child: Stack(
+              children: [
+                CachedNetworkImage(
+                  imageUrl: snapshot.data!,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  memCacheWidth: 440,
+                  placeholder: (_, _) => const SizedBox(
+                    width: double.infinity,
+                    height: 160,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                  errorWidget: (_, _, _) => const SizedBox(
+                    width: double.infinity,
+                    height: 160,
+                    child: Icon(Icons.broken_image_outlined),
+                  ),
+                ),
+                if (isGif)
+                  const PositionedDirectional(
+                    bottom: 6,
+                    start: 6,
+                    child: _MediaBadge(label: 'GIF'),
+                  ),
+              ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// The label pinned to the corner of a media tile: a clip's length, or the fact
+/// that a picture moves.
+class _MediaBadge extends StatelessWidget {
+  const _MediaBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+/// A clip the receiver can open. The poster is a separate Storage object the
+/// sender uploaded beside the video, so reading a thread never downloads a clip
+/// just to show what it looks like. While the send is still in flight there is
+/// no poster yet, so the tile carries the length alone.
+class _VideoContent extends StatelessWidget {
+  const _VideoContent({
+    required this.thumbnailUrl,
+    required this.durationMs,
+    this.onTap,
+  });
+
+  final Future<String>? thumbnailUrl;
+  final int? durationMs;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final strings = AppStrings.of(context);
+    final url = thumbnailUrl;
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: SizedBox(
+          width: 220,
+          height: 160,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (url == null)
+                Container(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  child: Icon(
+                    Icons.movie_outlined,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              else
+                FutureBuilder<String>(
+                  future: url,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return const Icon(Icons.broken_image_outlined);
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    return CachedNetworkImage(
+                      imageUrl: snapshot.data!,
+                      fit: BoxFit.cover,
+                      memCacheWidth: 440,
+                      errorWidget: (_, _, _) =>
+                          const Icon(Icons.broken_image_outlined),
+                    );
+                  },
+                ),
+              Center(
+                child: Icon(
+                  Icons.play_circle_fill,
+                  size: 44,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+              ),
+              PositionedDirectional(
+                bottom: 6,
+                end: 6,
+                child: _MediaBadge(
+                  label: chatMediaDurationLabel(strings, durationMs),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Where the one voice note the thread is playing has got to.
+///
+/// The chat screen owns the single player and hands this state to exactly one
+/// bubble, so tapping a second note takes the player over instead of two clips
+/// playing on top of each other.
+class ChatVoicePlayback {
+  const ChatVoicePlayback({
+    this.isPlaying = false,
+    this.isLoading = false,
+    this.progress = 0,
+    this.durationMs,
+  });
+
+  final bool isPlaying;
+
+  /// True while the clip url is still being resolved or the audio is buffering.
+  final bool isLoading;
+
+  /// 0..1 through the note.
+  final double progress;
+
+  /// The player's own length, which wins over the label the sender recorded
+  /// when the two disagree.
+  final int? durationMs;
+}
+
+/// A voice note: the play button, how far it has got, and how long it runs.
+class _VoiceContent extends StatelessWidget {
+  const _VoiceContent({
+    required this.isOutgoing,
+    required this.durationMs,
+    required this.playback,
+    this.onTap,
+  });
+
+  final bool isOutgoing;
+  final int? durationMs;
+  final ChatVoicePlayback? playback;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final strings = AppStrings.of(context);
+    final current = playback;
+    final accent = isOutgoing ? Colors.white : AppColors.brandPurple;
+    final track = isOutgoing
+        ? Colors.white.withValues(alpha: 0.35)
+        : theme.colorScheme.outlineVariant;
+    return Semantics(
+      button: true,
+      label: current?.isPlaying == true
+          ? strings.pauseVoiceMessage
+          : strings.playVoiceMessage,
+      child: InkWell(
+        onTap: onTap,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              current?.isLoading == true
+                  ? Icons.hourglass_empty
+                  : current?.isPlaying == true
+                  ? Icons.pause_circle_filled
+                  : Icons.play_circle_outline,
+              size: 32,
+              color: accent,
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 120,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: (current?.progress ?? 0).clamp(0.0, 1.0),
+                  minHeight: 4,
+                  backgroundColor: track,
+                  valueColor: AlwaysStoppedAnimation(accent),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              chatMediaDurationLabel(
+                strings,
+                current?.durationMs ?? durationMs,
+              ),
+              style: TextStyle(
+                fontSize: 11,
+                color: isOutgoing
+                    ? Colors.white
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A document: its name, its size, and how the download is going. The name was
+/// written by the sender, so it goes through [chatSafeReceivedName] before it
+/// reaches the screen.
+class _FileContent extends StatelessWidget {
+  const _FileContent({
+    required this.fileName,
+    required this.fileSize,
+    required this.progress,
+    required this.isOutgoing,
+    this.onTap,
+  });
+
+  final String? fileName;
+  final int? fileSize;
+  final double? progress;
+  final bool isOutgoing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final strings = AppStrings.of(context);
+    final accent = isOutgoing ? Colors.white : AppColors.brandPurple;
+    final track = isOutgoing
+        ? Colors.white.withValues(alpha: 0.35)
+        : theme.colorScheme.outlineVariant;
+    return InkWell(
+      onTap: onTap,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 200),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.description_outlined, size: 30, color: accent),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    chatSafeReceivedName(fileName),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isOutgoing
+                          ? Colors.white
+                          : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  if (fileSize != null)
+                    Text(
+                      strings.chatSizeLimit(fileSize!),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isOutgoing
+                            ? Colors.white70
+                            : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  if (progress != null) ...[
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: 120,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: progress!.clamp(0.0, 1.0),
+                          minHeight: 4,
+                          backgroundColor: track,
+                          valueColor: AlwaysStoppedAnimation(accent),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(
+              progress == null
+                  ? Icons.download_outlined
+                  : Icons.hourglass_empty,
+              size: 20,
+              color: accent,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

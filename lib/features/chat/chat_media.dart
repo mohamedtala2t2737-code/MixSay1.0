@@ -238,6 +238,34 @@ int? chatMediaLimitFor(ChatMessageType type) => switch (type) {
   ChatMessageType.text => null,
 };
 
+/// The longest name a file tile shows. Longer names are cut with the extension
+/// kept, because the extension is what tells the receiver what they are opening.
+const int chatReceivedNameDisplayLength = 60;
+
+/// The label for a document that arrived with no usable name. The sender writes
+/// [fileName] themselves, so it can be empty, all dots, or a path from their
+/// device.
+const String chatReceivedNameFallback = 'attachment';
+
+/// The name a receiver may safely show and save a sent document under.
+///
+/// [chatSafeReceivedName] keeps only the last path segment, drops the
+/// characters a filesystem refuses and falls back when nothing is left, so a
+/// name written by the other side can never point at another folder.
+String chatSafeReceivedName(String? rawName) {
+  final segment = (rawName ?? '').split(RegExp(r'[/\\]')).last;
+  final cleaned = segment
+      .replaceAll(RegExp('[\u0000-\u001F:*?"<>|]'), '')
+      .trim();
+  if (cleaned.isEmpty || cleaned.replaceAll('.', '').isEmpty) {
+    return chatReceivedNameFallback;
+  }
+  if (cleaned.length <= chatReceivedNameDisplayLength) return cleaned;
+  final extension = chatMediaExtension(cleaned);
+  final head = cleaned.substring(0, chatReceivedNameDisplayLength);
+  return extension.isEmpty ? '$head…' : '$head….$extension';
+}
+
 /// The longest voice note the app records. `firestore.rules` refuses a
 /// `durationMs` above ten minutes, so a longer recording would fail on the
 /// write rather than on the microphone.

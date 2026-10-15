@@ -281,6 +281,32 @@ class AppStrings {
       ? 'الملف ده مش سليم. جرّب ملف تاني.'
       : 'That file cannot be sent. Try another one.';
 
+  // ---------- chat attachments behind a feature flag ----------
+  String get attach => isArabic ? 'مرفق' : 'Attachment';
+  String get attachDocument => isArabic ? 'مستند' : 'Document';
+  String get attachGif => isArabic ? 'صورة متحركة' : 'GIF';
+  String get attachStickerFromGallery =>
+      isArabic ? 'ملصق من الصور عندك' : 'Sticker from your own pictures';
+  String get playVoiceMessage =>
+      isArabic ? 'تشغيل الرسالة الصوتية' : 'Play voice message';
+  String get pauseVoiceMessage => isArabic ? 'إيقاف مؤقت' : 'Pause';
+  String get playVideoMessage => isArabic ? 'تشغيل الفيديو' : 'Play video';
+  String get openFile => isArabic ? 'تنزيل الملف وفتحه' : 'Download and open';
+  String get mediaNotAvailable => isArabic
+      ? 'الملف ده مش متاح حالياً'
+      : 'This file is not available right now';
+  String downloadingFile(int percent) =>
+      isArabic ? 'جاري التنزيل… ${number(percent)}٪' : 'Downloading… $percent%';
+  String get recordingVoice => isArabic ? 'جاري التسجيل…' : 'Recording…';
+  String get sendRecording => isArabic ? 'إرسال' : 'Send';
+  String get searchGifsHint =>
+      isArabic ? 'ابحث في الصور المتحركة…' : 'Search GIFs…';
+  String get noGifsFound =>
+      isArabic ? 'مفيش صور متحركة' : 'No GIFs for that search';
+  String get gifSearchNeedsKey => isArabic
+      ? 'البحث عن الصور المتحركة محتاج مفتاح Tenor.'
+      : 'GIF search needs a Tenor API key.';
+
   String get startConversation => isArabic
       ? 'ابدأ محادثة مع أي شخص من حسابه أو البحث.'
       : 'Start a conversation from a profile or search.';

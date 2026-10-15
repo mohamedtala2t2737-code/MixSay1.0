@@ -286,4 +286,37 @@ void main() {
       expect(message.fileSize, isNull);
     });
   });
+
+  group('the name a sender gives their file', () {
+    test('keeps a plain document name as it is', () {
+      expect(chatSafeReceivedName('My Report (1).pdf'), 'My Report (1).pdf');
+    });
+
+    test('shows only the file, never the folder it came from', () {
+      expect(chatSafeReceivedName('/home/sama/notes/week 3.txt'), 'week 3.txt');
+      expect(chatSafeReceivedName(r'C:\Users\sama\x.pdf'), 'x.pdf');
+    });
+
+    test('drops what a filesystem on the receiver would refuse', () {
+      expect(chatSafeReceivedName('report:final?.pdf'), 'reportfinal.pdf');
+      expect(chatSafeReceivedName('a\u0000b.txt'), 'ab.txt');
+    });
+
+    test('falls back when the name says nothing', () {
+      expect(chatSafeReceivedName(null), 'attachment');
+      expect(chatSafeReceivedName(''), 'attachment');
+      expect(chatSafeReceivedName('   '), 'attachment');
+      expect(chatSafeReceivedName('...'), 'attachment');
+      expect(chatSafeReceivedName('../../'), 'attachment');
+    });
+
+    test('cuts a long name but keeps the part you open it with', () {
+      final long = 'a' * 120;
+      final shown = chatSafeReceivedName('$long.pdf');
+
+      expect(shown.length, lessThan(long.length));
+      expect(shown, endsWith('.pdf'));
+      expect(chatSafeReceivedName('b' * 200), isNot(contains('.')));
+    });
+  });
 }

@@ -15,6 +15,16 @@ String chatTimeLabel(AppStrings strings, DateTime time) {
   );
 }
 
+/// How long a voice note or a clip runs, as `m:ss` in the locale's digits. A
+/// message that never carried a length reads as zero rather than as an error,
+/// because the recording itself is still playable.
+String chatMediaDurationLabel(AppStrings strings, int? durationMs) {
+  final seconds = (durationMs ?? 0) ~/ 1000;
+  return strings.number(
+    '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}',
+  );
+}
+
 /// The separator above the first message of a day. Today and Yesterday are
 /// words, anything older is a plain date, so a long thread stays scannable.
 String chatDateLabel(AppStrings strings, DateTime time, {DateTime? now}) {

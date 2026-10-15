@@ -1077,8 +1077,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               tooltip: s.stickers,
                               onPressed: () => setState(() {
                                 _showStickerPicker = !_showStickerPicker;
-                                if (_showStickerPicker)
+                                if (_showStickerPicker) {
                                   _showEmojiPicker = false;
+                                }
                               }),
                               icon: const Icon(Icons.sticky_note_2_outlined),
                             ),

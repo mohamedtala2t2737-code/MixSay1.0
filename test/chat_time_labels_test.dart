@@ -94,4 +94,23 @@ void main() {
       );
     });
   });
+
+  group('how long a clip or a note runs', () {
+    test('minutes and padded seconds', () {
+      expect(chatMediaDurationLabel(english, 42000), '0:42');
+      expect(chatMediaDurationLabel(english, 65_500), '1:05');
+      expect(chatMediaDurationLabel(english, 600_000), '10:00');
+    });
+
+    test('a message that never carried a length reads as zero', () {
+      expect(chatMediaDurationLabel(english, null), '0:00');
+      expect(chatMediaDurationLabel(english, 0), '0:00');
+      // Sub-second rounding must not invent a second.
+      expect(chatMediaDurationLabel(english, 900), '0:00');
+    });
+
+    test('Arabic digits, whatever the clip', () {
+      expect(chatMediaDurationLabel(arabic, 42000), '٠:٤٢');
+    });
+  });
 }
