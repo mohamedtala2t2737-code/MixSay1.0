@@ -245,19 +245,21 @@ void main() {
       }
     });
 
-    test('a sticker keeps its own button, never a paid row', () {
+    test('a sticker is a tab of its own, never a paid row', () {
       // A bundled sticker costs nothing to send, so it does not belong behind
       // the paperclip that hides with the free plan, and a gallery sticker has
       // no document the rules would accept.
       final sheetSource = File('lib/features/chat/chat_attachment_sheet.dart')
           .readAsStringSync();
-      final screenSource = File('lib/features/chat/chat_screen.dart')
+      final traySource = File('lib/features/chat/chat_tray.dart')
           .readAsStringSync();
 
       expect(sheetSource.contains('userUploadedStickers'), isFalse);
+      expect(traySource, contains('ChatStickerPicker(onSelected:'));
       expect(
-        screenSource,
-        contains('ChatStickerPicker(onSelected: _sendSticker)'),
+        traySource,
+        contains('if (!ChatMessageType.sticker.isGated) ChatTrayTab.stickers'),
+        reason: 'the sticker tab is offered even when stickers are gated off',
       );
     });
 
@@ -266,10 +268,17 @@ void main() {
       // ceiling that refuses an oversized note is the one storage rules read.
       final source = File('lib/features/chat/chat_screen.dart')
           .readAsStringSync();
+      final composerSource = File('lib/features/chat/chat_composer.dart')
+          .readAsStringSync();
 
-      expect(source, contains('if (!ChatMessageType.voice.isGated)'));
+      expect(source, contains('micAvailable: !ChatMessageType.voice.isGated'));
       expect(source, contains('_startVoiceTake'));
       expect(source, contains('_VoiceTakeBar('));
+      expect(
+        composerSource,
+        contains('if (hasText || micAvailable)'),
+        reason: 'an empty field with no voice to record must show no button',
+      );
       expect(
         source.contains('ChatAttachmentChoice.voice'),
         isFalse,

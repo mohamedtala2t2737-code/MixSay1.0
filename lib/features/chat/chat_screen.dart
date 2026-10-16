@@ -24,15 +24,15 @@ import 'package:social_chat/core/widgets/app_settings_sheet.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/chat/chat_attachment_sheet.dart';
-import 'package:social_chat/features/chat/chat_emoji_picker.dart';
+import 'package:social_chat/features/chat/chat_composer.dart';
 import 'package:social_chat/features/chat/chat_gif_search.dart';
 import 'package:social_chat/features/chat/chat_media.dart';
 import 'package:social_chat/features/chat/chat_message_bubble.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
-import 'package:social_chat/features/chat/chat_stickers.dart';
 import 'package:social_chat/features/chat/chat_time_labels.dart';
+import 'package:social_chat/features/chat/chat_tray.dart';
 import 'package:social_chat/features/chat/chat_voice_recorder.dart';
 import 'package:social_chat/features/chat/chat_wallpaper.dart';
 
@@ -59,8 +59,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _hasLoadedOlder = false;
   bool _sending = false;
   bool _offline = false;
-  bool _showEmojiPicker = false;
-  bool _showStickerPicker = false;
+
+  /// The panel that takes the keyboard's place under the composer, and the tab
+  /// it last showed. Only one of the two is ever on screen at a time.
+  bool _trayOpen = false;
+  ChatTrayTab _trayTab = ChatTrayTab.emoji;
   bool _otherTyping = false;
   bool _claimingTyping = false;
 
@@ -95,6 +98,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void initState() {
     super.initState();
     ActiveChatState.open(widget.conversationId);
+    // Tapping the field is how the keyboard comes back, so it also puts the
+    // panel away — the two are never both on screen.
+    _messageFocusNode.addListener(_onFieldFocusChanged);
     _loadConversation();
     _loadMessages();
     _subscribeToMessages();
@@ -501,11 +507,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  Future<void> _sendPhoto() async {
+  Future<void> _sendPhoto({ImageSource source = ImageSource.gallery}) async {
     if (_sending) return;
-    final picked = await _imagePicker.pickImage(source: ImageSource.gallery);
+    final picked = await _imagePicker.pickImage(source: source);
     if (picked == null || !mounted) return;
     await _sendDraft((clientId) => _compressedPhoto(picked, clientId));
+  }
+
+  /// The camera icon in the composer: one shot, sent exactly as a picked photo
+  /// is. It is only drawn while images are on, and the CAMERA permission the
+  /// manifest already declares is all it needs.
+  Future<void> _sendCameraPhoto() async {
+    if (_sending) return;
+    try {
+      await _sendPhoto(source: ImageSource.camera);
+    } catch (error) {
+      // A camera the platform refuses — no camera app, a denied permission —
+      // throws instead of answering null, so the tap still explains itself.
+      if (!mounted) return;
+      _showAttachmentFailure(error);
+    }
   }
 
   Future<void> _sendVideo() async {
@@ -561,10 +582,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (_sending) return;
     final gif = await showChatGifPicker(context);
     if (gif == null || !mounted) return;
+    await _sendGifUrl(gif.url);
+  }
+
+  /// The same send for a GIF already chosen, whether it came from the attach
+  /// sheet or from the panel's own tab.
+  Future<void> _sendGifUrl(String url) async {
     await _sendDraft(
       (clientId) => ChatAttachmentDraft(
         type: ChatMessageType.gif,
-        localPath: gif.url,
+        localPath: url,
         fileName: '$clientId.gif',
         byteSize: 0,
       ),
@@ -962,6 +989,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _typingDebounce = Timer(const Duration(milliseconds: 400), _claimTyping);
   }
 
+  /// The panel and the keyboard are two ways of typing, so one of them always
+  /// gives way: the field taking focus puts the panel away.
+  void _onFieldFocusChanged() {
+    if (_messageFocusNode.hasFocus && _trayOpen && mounted) {
+      setState(() => _trayOpen = false);
+    }
+  }
+
+  /// Opens the panel on the tab it last showed, and takes the keyboard out of
+  /// its way. Tapping it again is how the panel goes back down.
+  void _toggleTray() {
+    setState(() {
+      _trayOpen = !_trayOpen;
+      if (_trayOpen) _messageFocusNode.unfocus();
+    });
+  }
+
   /// Drops an emoji where the caret is, or at the end when there is no caret,
   /// and leaves the field focused so a sentence can be built one tap at a time.
   void _insertEmoji(String emoji) {
@@ -975,8 +1019,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       text: inserted.text,
       selection: inserted.selection,
     );
-    _messageFocusNode.requestFocus();
+    // While the panel is up it owns the bottom of the screen, so the caret
+    // keeps its place without asking the keyboard back.
+    if (!_trayOpen) _messageFocusNode.requestFocus();
     _onTextChanged(_messageController.text);
+  }
+
+  /// Puts a message in the reply slot, from the menu or from a swipe.
+  void _replyToMessage(ChatMessage message) {
+    setState(() => _replyingTo = message);
+    _messageFocusNode.requestFocus();
   }
 
   Future<void> _claimTyping() async {
@@ -1077,8 +1129,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(content: Text(s.textCopied)));
       case _MessageAction.reply:
-        setState(() => _replyingTo = message);
-        _messageFocusNode.requestFocus();
+        _replyToMessage(message);
       case _MessageAction.deleteForMe:
         await _runMessageAction(
           () => ref
@@ -1386,6 +1437,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 ? () => _scrollToMessage(quotedId)
                                 : null,
                             onLongPress: () => _showMessageActions(message),
+                            onSwipeReply: message.deletedForEveryone
+                                ? null
+                                : () => _replyToMessage(message),
                             onRetry: () => _retryMessage(message),
                             onDeleteFailed: () => _deleteMessage(message),
                             imageUrl:
@@ -1413,159 +1467,74 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 top: false,
                 child: Column(
                   children: [
-                    if (_showEmojiPicker)
-                      ChatEmojiPicker(onSelected: _insertEmoji),
-                    if (_showStickerPicker)
-                      ChatStickerPicker(onSelected: _sendSticker),
-                    if (_replyingTo != null)
+                    if (_replyingTo case final replyingTo?)
                       _ReplyDraft(
-                        preview: ChatReply.quoteFrom(_replyingTo!),
+                        preview: ChatReply.quoteFrom(replyingTo),
                         currentUserId: meId ?? '',
                         otherDisplayName: displayName,
                         onCancel: () => setState(() => _replyingTo = null),
                       ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(4, 8, 8, 8),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (ChatFeatures.emojiPicker)
-                            IconButton(
-                              tooltip: s.emoji,
-                              onPressed: () => setState(
-                                () => _showEmojiPicker = !_showEmojiPicker,
-                              ),
-                              icon: Icon(
-                                _showEmojiPicker
-                                    ? Icons.keyboard_outlined
-                                    : Icons.emoji_emotions_outlined,
-                              ),
-                            ),
-                          // A sticker type is gated by every sticker source, so
-                          // this disappears when the plan has none.
-                          if (!ChatMessageType.sticker.isGated)
-                            IconButton(
-                              tooltip: s.stickers,
-                              onPressed: () => setState(() {
-                                _showStickerPicker = !_showStickerPicker;
-                                if (_showStickerPicker) {
-                                  _showEmojiPicker = false;
-                                }
-                              }),
-                              icon: const Icon(Icons.sticky_note_2_outlined),
-                            ),
-                          // The paperclip is the only door to an attachment, and it
-                          // disappears while the free plan is in force, so nobody can
-                          // reach a control that would cost money.
-                          if (ChatAttachmentSheet.availableOptions().isNotEmpty)
-                            IconButton(
-                              tooltip: s.attach,
-                              onPressed: _sending ? null : _openAttachments,
-                              icon: const Icon(Icons.add_circle_outline),
-                            ),
-                          // A note costs Storage like any other upload, so the
-                          // mic is drawn only when that plan line is on.
-                          if (!ChatMessageType.voice.isGated)
-                            IconButton(
-                              tooltip: s.recordVoice,
-                              onPressed: _sending || _voice != null
-                                  ? null
-                                  : _startVoiceTake,
-                              icon: const Icon(Icons.mic_outlined),
-                            ),
-                          // While a take is running or waiting to be sent the
-                          // field makes way for the clock and the two controls
-                          // that finish it.
-                          if (_voice != null || _readyTakePath != null)
-                            _VoiceTakeBar(
-                              elapsed: chatMediaDurationLabel(
-                                s,
-                                _voice?.elapsedMs ?? _readyTakeMs,
-                              ),
-                              isRecording: _voice != null,
-                              recordingLabel: s.recordingVoice,
-                              cancelLabel: s.cancel,
-                              sendLabel: s.sendRecording,
-                              onCancel: _discardVoiceTake,
-                              onSend: _sending ? null : _sendVoiceTake,
-                            )
-                          else ...[
-                            Expanded(
-                              child: TextField(
-                                controller: _messageController,
-                                focusNode: _messageFocusNode,
-                                minLines: 1,
-                                maxLines: 5,
-                                maxLength: ChatFeatures.maxTextLength,
-                                textCapitalization:
-                                    TextCapitalization.sentences,
-                                onChanged: _onTextChanged,
-                                onSubmitted: (_) => _sendMessage(),
-                                buildCounter:
-                                    (
-                                      context, {
-                                      required currentLength,
-                                      required isFocused,
-                                      required maxLength,
-                                    }) => currentLength >= 3900
-                                    ? Text(
-                                        s.messageCharacterCount(
-                                          currentLength,
-                                          maxLength ??
-                                              ChatFeatures.maxTextLength,
-                                        ),
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall,
-                                      )
-                                    : null,
-                                decoration: InputDecoration(
-                                  hintText: s.typeMessage,
-                                  filled: true,
-                                  fillColor: AppColors.fieldFill(
-                                    Theme.of(context).brightness,
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(24),
-                                    borderSide: BorderSide.none,
-                                  ),
+                      child: ChatComposer(
+                        controller: _messageController,
+                        focusNode: _messageFocusNode,
+                        // A panel whose every tab is switched off is not
+                        // offered as a button.
+                        trayAvailable: ChatTray.availableTabs().isNotEmpty,
+                        // The paperclip is the only door to an attachment, and
+                        // it disappears while the free plan is in force, so
+                        // nobody can reach a control that would cost money.
+                        attachAvailable:
+                            ChatAttachmentSheet.availableOptions().isNotEmpty,
+                        cameraAvailable: !ChatMessageType.image.isGated,
+                        // A note costs Storage like any other upload, so the
+                        // mic is drawn only when that plan line is on.
+                        micAvailable: !ChatMessageType.voice.isGated,
+                        trayOpen: _trayOpen,
+                        busy: _sending,
+                        // While a take is running or waiting to be sent the
+                        // field makes way for the clock and the two controls
+                        // that finish it.
+                        inFlight: _voice == null && _readyTakePath == null
+                            ? null
+                            : _VoiceTakeBar(
+                                elapsed: chatMediaDurationLabel(
+                                  s,
+                                  _voice?.elapsedMs ?? _readyTakeMs,
                                 ),
+                                isRecording: _voice != null,
+                                recordingLabel: s.recordingVoice,
+                                cancelLabel: s.cancel,
+                                sendLabel: s.sendRecording,
+                                onCancel: _discardVoiceTake,
+                                onSend: _sending ? null : _sendVoiceTake,
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            SizedBox(
-                              width: 48,
-                              height: 48,
-                              child: IconButton(
-                                onPressed: _sending ? null : _sendMessage,
-                                style: IconButton.styleFrom(
-                                  backgroundColor: Theme.of(context)
-                                      .colorScheme
-                                      .primary,
-                                  shape: const CircleBorder(),
-                                ),
-                                icon: _sending
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : const Icon(
-                                        Icons.send,
-                                        color: Colors.white,
-                                      ),
-                              ),
-                            ),
-                          ],
-                        ],
+                        onTrayTap: _toggleTray,
+                        onAttachTap: _sending ? null : _openAttachments,
+                        onCameraTap: _sending ? null : _sendCameraPhoto,
+                        onMicTap: _sending || _voice != null
+                            ? null
+                            : _startVoiceTake,
+                        onSend: _sendMessage,
+                        onTextChanged: _onTextChanged,
                       ),
+                    ),
+                    // The panel takes the keyboard's place, so it slides up
+                    // under the composer instead of lying over the thread.
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      alignment: Alignment.bottomCenter,
+                      child: _trayOpen
+                          ? ChatTray(
+                              initial: _trayTab,
+                              onTabChanged: (tab) => _trayTab = tab,
+                              onEmoji: _insertEmoji,
+                              onSticker: _sendSticker,
+                              onGif: (gif) => _sendGifUrl(gif.url),
+                            )
+                          : const SizedBox(width: double.infinity),
                     ),
                   ],
                 ),
@@ -1604,15 +1573,16 @@ class _ReplyDraft extends StatelessWidget {
     final text = preview.content.isNotEmpty
         ? preview.content
         : preview.type.previewLabel(strings);
+    // The same green the quoted block in a bubble uses, so the draft above the
+    // keyboard and the quote inside the thread read as one thing.
+    final accent = AppColors.chatQuoteAccent(theme.brightness);
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       padding: const EdgeInsetsDirectional.only(start: 10, end: 2),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
-        border: const BorderDirectional(
-          start: BorderSide(color: AppColors.brandPurple, width: 3),
-        ),
+        border: BorderDirectional(start: BorderSide(color: accent, width: 3)),
       ),
       child: Row(
         children: [
@@ -1623,7 +1593,7 @@ class _ReplyDraft extends StatelessWidget {
                 Text(
                   strings.replyingTo(author),
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppColors.brandPurple,
+                    color: accent,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

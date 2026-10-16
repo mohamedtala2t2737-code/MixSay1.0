@@ -250,6 +250,10 @@ class AppStrings {
       isArabic ? 'الحساب ده بقى محذوف' : 'This account is no longer available';
   String get emoji => isArabic ? 'إيموجي' : 'Emoji';
   String get stickers => isArabic ? 'ملصقات' : 'Stickers';
+
+  /// The tooltip of the button that puts the keyboard back.
+  String get closeChatPanel => isArabic ? 'إرجاع الكيبورد' : 'Back to keyboard';
+  String get takePhoto => isArabic ? 'كاميرا' : 'Camera';
   String get youLabel => isArabic ? 'أنت' : 'You';
 
   // ---------- chats list: preview of a message without text ----------

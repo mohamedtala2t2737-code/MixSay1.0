@@ -38,6 +38,7 @@ class ChatMessageBubble extends StatelessWidget {
     this.onFileTap,
     this.onLongPress,
     this.onReplyTap,
+    this.onSwipeReply,
     this.isGroupStart = true,
   });
 
@@ -76,6 +77,11 @@ class ChatMessageBubble extends StatelessWidget {
   /// one person's messages sits close together and only the first of a group
   /// leaves room, which is what makes a thread readable without names on it.
   final bool isGroupStart;
+
+  /// Answering this message, reached by dragging the bubble sideways. The chat
+  /// screen hands it a real reply slot, so the gesture is only armed where the
+  /// reply can actually go.
+  final VoidCallback? onSwipeReply;
 
   bool get _showsMedia =>
       localImagePath != null ||
@@ -278,9 +284,12 @@ class ChatMessageBubble extends StatelessWidget {
           children: [
             Padding(
               padding: EdgeInsets.only(top: isGroupStart ? 10 : 2),
-              child: GestureDetector(
-                onLongPress: message.deletedForEveryone ? null : onLongPress,
-                child: bubble,
+              child: _SwipeToReply(
+                onReply: onSwipeReply,
+                child: GestureDetector(
+                  onLongPress: message.deletedForEveryone ? null : onLongPress,
+                  child: bubble,
+                ),
               ),
             ),
             if (isOutgoing && message.status == 'failed')
@@ -904,6 +913,91 @@ class _StatusTicks extends StatelessWidget {
       color: status == 'read'
           ? AppColors.chatTickRead(theme.brightness)
           : color,
+    );
+  }
+}
+
+/// A bubble pulled sideways and let go answers that message, which is the way
+/// most people reply on a phone.
+///
+/// It only arms when the screen has somewhere for the reply to go, and a swipe
+/// works in either direction so an Arabic thread behaves like an English one.
+class _SwipeToReply extends StatefulWidget {
+  const _SwipeToReply({required this.child, this.onReply});
+
+  final Widget child;
+  final VoidCallback? onReply;
+
+  @override
+  State<_SwipeToReply> createState() => _SwipeToReplyState();
+}
+
+class _SwipeToReplyState extends State<_SwipeToReply> {
+  /// How far the bubble has to travel before the release counts as a reply.
+  static const _trigger = 48.0;
+
+  /// The bubble slides a little past that and no further, so a long drag does
+  /// not turn into a swipe across the whole screen.
+  static const _travel = 72.0;
+
+  double _drag = 0;
+
+  bool get _armed => _drag.abs() >= _trigger;
+
+  void _end(bool fire) {
+    setState(() => _drag = 0);
+    if (fire) widget.onReply?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final onReply = widget.onReply;
+    if (onReply == null) return widget.child;
+    final theme = Theme.of(context);
+    // The hint belongs on the side the bubble has just left, which is a matter
+    // of pixels rather than of reading direction, so a swipe reads the same in
+    // an Arabic thread as in an English one.
+    final movedRight = _drag >= 0;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragUpdate: (details) => setState(() {
+        _drag = (_drag + details.delta.dx).clamp(-_travel, _travel);
+      }),
+      onHorizontalDragEnd: (_) => _end(_armed),
+      onHorizontalDragCancel: () => setState(() => _drag = 0),
+      child: Stack(
+        children: [
+          // Positioned rather than aligned: a hint that grew the stack would
+          // move the bubble off its own side of the thread.
+          Positioned(
+            left: movedRight ? 6 : null,
+            right: movedRight ? null : 6,
+            top: 0,
+            bottom: 0,
+            child: Align(
+              alignment: movedRight
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
+              child: Opacity(
+                opacity: (_drag.abs() / _trigger).clamp(0.0, 1.0),
+                child: Transform(
+                  transform: Matrix4.diagonal3Values(movedRight ? -1 : 1, 1, 1),
+                  child: Icon(
+                    Icons.reply,
+                    size: 20,
+                    color: AppColors.chatQuoteAccent(theme.brightness),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            transform: Matrix4.translationValues(_drag, 0, 0),
+            child: widget.child,
+          ),
+        ],
+      ),
     );
   }
 }

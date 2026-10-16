@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,6 +39,7 @@ Widget _harness(
   ChatMessage message, {
   bool isOutgoing = true,
   VoidCallback? onLongPress,
+  VoidCallback? onSwipeReply,
   Locale locale = const Locale('en'),
 }) => MaterialApp(
   locale: locale,
@@ -54,6 +57,7 @@ Widget _harness(
       currentUserId: _me,
       otherDisplayName: 'Salma',
       onLongPress: onLongPress,
+      onSwipeReply: onSwipeReply,
     ),
   ),
 );
@@ -218,6 +222,112 @@ void main() {
       );
       await tester.longPress(find.text('ahlan'));
       expect(opened, isTrue);
+    });
+  });
+
+  group('swiping to reply', () {
+    /// Drags the bubble sideways and reports whether the reply was armed.
+    Future<bool> swipe(
+      WidgetTester tester, {
+      double dx = 60,
+      Locale locale = const Locale('en'),
+      bool armed = true,
+    }) async {
+      var replied = false;
+      await _show(
+        tester,
+        _harness(
+          _message(),
+          onSwipeReply: armed ? () => replied = true : null,
+          locale: locale,
+        ),
+      );
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('ahlan')),
+      );
+      await gesture.moveBy(Offset(dx, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      return replied;
+    }
+
+    testWidgets('a swipe past the trigger answers the message', (tester) async {
+      expect(await swipe(tester), isTrue);
+    });
+
+    testWidgets('a swipe that falls short gives back', (tester) async {
+      expect(await swipe(tester, dx: 20), isFalse);
+    });
+
+    testWidgets('either direction counts', (tester) async {
+      expect(await swipe(tester, dx: -60), isTrue);
+    });
+
+    testWidgets('an Arabic thread swipes the same way', (tester) async {
+      expect(
+        await swipe(tester, locale: const Locale('ar')),
+        isTrue,
+        reason: 'a reply is a drag of the pixels, not of the reading order',
+      );
+    });
+
+    testWidgets('the hint fades in as the bubble travels', (tester) async {
+      await _show(tester, _harness(_message(), onSwipeReply: () {}));
+      expect(find.byIcon(Icons.reply), findsOneWidget);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('ahlan')),
+      );
+      await gesture.moveBy(const Offset(24, 0));
+      await tester.pump();
+      final half = tester
+          .widget<Opacity>(
+            find
+                .ancestor(
+                  of: find.byIcon(Icons.reply),
+                  matching: find.byType(Opacity),
+                )
+                .first,
+          )
+          .opacity;
+      expect(half, greaterThan(0));
+      expect(half, lessThan(1));
+
+      await gesture.moveBy(const Offset(30, 0));
+      await tester.pump();
+      expect(
+        tester
+            .widget<Opacity>(
+              find
+                  .ancestor(
+                    of: find.byIcon(Icons.reply),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity,
+        1.0,
+      );
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('a bubble nobody can answer has no hint to fade', (
+      tester,
+    ) async {
+      await _show(tester, _harness(_message()));
+      expect(find.byIcon(Icons.reply), findsNothing);
+      expect(find.byType(GestureDetector), findsOneWidget);
+    });
+
+    test('the screen arms it for a message that can still be replied to', () {
+      final source = File('lib/features/chat/chat_screen.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+      expect(source, contains('onSwipeReply: message.deletedForEveryone'));
     });
   });
 
