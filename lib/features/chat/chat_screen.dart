@@ -124,7 +124,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // A take left in the temporary folder is the one thing leaving the chat
     // can still throw away, and the recorder owns the microphone until it goes.
     final recorder = _voice;
-    if (recorder != null) unawaited(recorder.dispose());
+    if (recorder != null) unawaited(_giveVoiceRecorderBack(recorder));
     final readyTake = _readyTakePath;
     if (readyTake != null) unawaited(_deleteVoiceFile(readyTake));
     _messageController.dispose();
@@ -326,15 +326,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final options = ChatAttachmentSheet.availableOptions();
     final choice = await showChatAttachmentSheet(context, options: options);
     if (!mounted || choice == null) return;
-    switch (choice) {
-      case ChatAttachmentChoice.photo:
-        await _sendPhoto();
-      case ChatAttachmentChoice.video:
-        await _sendVideo();
-      case ChatAttachmentChoice.document:
-        await _sendDocument();
-      case ChatAttachmentChoice.gif:
-        await _sendGif();
+    // A picker that the platform refuses — no gallery app, a denied file
+    // provider — throws rather than returning nothing, and the sender deserves
+    // a line on the screen rather than a dead tap.
+    try {
+      switch (choice) {
+        case ChatAttachmentChoice.photo:
+          await _sendPhoto();
+        case ChatAttachmentChoice.video:
+          await _sendVideo();
+        case ChatAttachmentChoice.document:
+          await _sendDocument();
+        case ChatAttachmentChoice.gif:
+          await _sendGif();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      _showAttachmentFailure(error);
     }
   }
 
@@ -344,10 +352,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _startVoiceTake() async {
     if (_sending || _voice != null) return;
     final recorder = ChatVoiceRecorder(source: ChatPluginVoiceSource());
-    final directory = (await getTemporaryDirectory()).path;
-    final path = await recorder.start(directory);
+    final String? path;
+    try {
+      final directory = (await getTemporaryDirectory()).path;
+      path = await recorder.start(directory);
+    } catch (error) {
+      // A recorder the platform refuses to open throws instead of answering
+      // null, so the take is given back and the sender is told in one line.
+      await _giveVoiceRecorderBack(recorder);
+      if (!mounted) return;
+      _showAttachmentFailure(error);
+      return;
+    }
     if (path == null) {
-      await recorder.dispose();
+      await _giveVoiceRecorderBack(recorder);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -381,13 +399,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _voiceTick = null;
     _voice = null;
     final durationMs = recorder.elapsedMs;
-    final path = await recorder.stop();
-    await recorder.dispose();
+    String? path;
+    try {
+      path = await recorder.stop();
+    } catch (error) {
+      if (!mounted) {
+        await _giveVoiceRecorderBack(recorder);
+        return;
+      }
+      await _giveVoiceRecorderBack(recorder);
+      _showAttachmentFailure(error);
+      return;
+    }
+    await _giveVoiceRecorderBack(recorder);
     if (!mounted || path == null) return;
     setState(() {
       _readyTakePath = path;
       _readyTakeMs = durationMs;
     });
+  }
+
+  /// Releases a recorder without letting a plugin failure escape into a tap
+  /// that already stopped mutating the screen.
+  Future<void> _giveVoiceRecorderBack(ChatVoiceRecorder recorder) async {
+    try {
+      await recorder.dispose();
+    } catch (error) {
+      debugPrint('Unable to release the microphone: $error');
+    }
   }
 
   Future<void> _sendVoiceTake() async {
@@ -421,8 +460,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _readyTakeMs = 0;
     });
     if (recorder != null) {
-      await recorder.cancel();
-      await recorder.dispose();
+      try {
+        await recorder.cancel();
+      } catch (error) {
+        // The sender already gave up on the take; a plugin that refuses to
+        // close the mic is logged, not shown as a failed action.
+        debugPrint('Unable to cancel the recording: $error');
+      }
+      await _giveVoiceRecorderBack(recorder);
       return;
     }
     if (ready != null) await _deleteVoiceFile(ready);

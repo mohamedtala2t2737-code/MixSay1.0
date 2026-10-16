@@ -276,5 +276,45 @@ void main() {
         reason: 'there is no voice row in the sheet',
       );
     });
+
+    test('a recorder the platform refuses still leaves the screen usable', () {
+      // `record` throws when it cannot open the microphone rather than
+      // answering null, so every call it makes is wrapped and the recorder is
+      // released through one helper that swallows.
+      final source = File('lib/features/chat/chat_screen.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+
+      for (final method in ['_startVoiceTake', '_parkVoiceTake']) {
+        expect(
+          _body(source, 'Future<void> $method'),
+          contains('try {'),
+          reason: '$method lets a plugin failure escape',
+        );
+      }
+      expect(source, contains('_giveVoiceRecorderBack'));
+      expect(
+        source.contains('unawaited(recorder.dispose())'),
+        isFalse,
+        reason: 'an unawaited dispose would surface as an uncaught error',
+      );
+    });
   });
+}
+
+/// The body of [declaration], from its opening brace to the brace closing it.
+String _body(String source, String declaration) {
+  final start = source.indexOf('$declaration(');
+  expect(start, greaterThanOrEqualTo(0), reason: '$declaration is gone');
+  final open = source.indexOf('{', start);
+  var depth = 0;
+  for (var i = open; i < source.length; i++) {
+    final char = source[i];
+    if (char == '{') depth++;
+    if (char == '}') {
+      depth--;
+      if (depth == 0) return source.substring(open, i + 1);
+    }
+  }
+  fail('$declaration has no closing brace');
 }
