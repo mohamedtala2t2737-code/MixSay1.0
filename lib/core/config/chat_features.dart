@@ -29,7 +29,9 @@ class ChatFeatures {
   /// Voice notes: microphone recording and Storage upload.
   static const bool voiceMessages = false;
 
-  /// Stickers the user uploads themselves: Storage.
+  /// Stickers the user uploads themselves. Flipping this is not enough: a
+  /// `sticker` message carries an id and no `mediaUrl`, which is what
+  /// `firestore.rules` accepts, so the upload needs a rule and a schema first.
   static const bool userUploadedStickers = false;
 
   /// Tenor search. Needs an API key, so it also stays off until the key is

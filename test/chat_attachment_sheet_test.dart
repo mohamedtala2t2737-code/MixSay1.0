@@ -156,7 +156,7 @@ void main() {
           ChatAttachmentSheet(
             options: const [
               ChatAttachmentChoice.document,
-              ChatAttachmentChoice.sticker,
+              ChatAttachmentChoice.gif,
             ],
             onSelected: (_) {},
           ),
@@ -165,7 +165,7 @@ void main() {
       );
 
       expect(find.text('مستند'), findsOneWidget);
-      expect(find.text('ملصق من الصور عندك'), findsOneWidget);
+      expect(find.text('صورة متحركة'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -243,6 +243,22 @@ void main() {
           reason: '$choice has no route in the composer',
         );
       }
+    });
+
+    test('a sticker keeps its own button, never a paid row', () {
+      // A bundled sticker costs nothing to send, so it does not belong behind
+      // the paperclip that hides with the free plan, and a gallery sticker has
+      // no document the rules would accept.
+      final sheetSource = File('lib/features/chat/chat_attachment_sheet.dart')
+          .readAsStringSync();
+      final screenSource = File('lib/features/chat/chat_screen.dart')
+          .readAsStringSync();
+
+      expect(sheetSource.contains('userUploadedStickers'), isFalse);
+      expect(
+        screenSource,
+        contains('ChatStickerPicker(onSelected: _sendSticker)'),
+      );
     });
   });
 }

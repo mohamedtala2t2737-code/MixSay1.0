@@ -86,10 +86,7 @@ ChatGifPage chatGifPageFromTenor(Map<String, dynamic> body) {
         if (_gifOf(row) case final ChatGif gif) gif,
   ];
   final next = body['next'];
-  return (
-    gifs: gifs,
-    next: next is String && next.isNotEmpty ? next : null,
-  );
+  return (gifs: gifs, next: next is String && next.isNotEmpty ? next : null);
 }
 
 ChatGif? _gifOf(Object? row) {
@@ -270,7 +267,10 @@ class _ChatGifPickerState extends State<ChatGifPicker> {
     }
     if (_gifs.isEmpty && _loading) return const LoadingView();
     if (_gifs.isEmpty) {
-      return EmptyStateView(icon: Icons.gif_outlined, title: strings.noGifsFound);
+      return EmptyStateView(
+        icon: Icons.gif_outlined,
+        title: strings.noGifsFound,
+      );
     }
     return GridView.builder(
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),

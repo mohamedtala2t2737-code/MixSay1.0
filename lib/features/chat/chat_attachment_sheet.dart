@@ -6,7 +6,12 @@ import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/widgets/app_list_tile.dart';
 
 /// Something the user can add to a message besides text.
-enum ChatAttachmentChoice { photo, video, document, gif, sticker }
+///
+/// A bundled sticker is not one of these: it travels as an id with no upload,
+/// and the composer already has a tray button for it. A sticker from the
+/// gallery would need `mediaUrl` on a `sticker` document, which
+/// `firestore.rules` refuses, so there is no honest row to offer.
+enum ChatAttachmentChoice { photo, video, document, gif }
 
 /// The attach sheet: one row per kind of attachment the plan allows.
 ///
@@ -35,7 +40,6 @@ class ChatAttachmentSheet extends StatelessWidget {
     if (ChatFeatures.documents) ChatAttachmentChoice.document,
     if (ChatFeatures.gifSearch && ChatSecrets.hasTenorKey)
       ChatAttachmentChoice.gif,
-    if (ChatFeatures.userUploadedStickers) ChatAttachmentChoice.sticker,
   ];
 
   @override
@@ -57,14 +61,12 @@ class ChatAttachmentSheet extends StatelessWidget {
   }
 }
 
-IconData chatAttachmentIcon(ChatAttachmentChoice choice) =>
-    switch (choice) {
-      ChatAttachmentChoice.photo => Icons.image_outlined,
-      ChatAttachmentChoice.video => Icons.videocam_outlined,
-      ChatAttachmentChoice.document => Icons.folder_outlined,
-      ChatAttachmentChoice.gif => Icons.gif_box_outlined,
-      ChatAttachmentChoice.sticker => Icons.add_to_photos_outlined,
-    };
+IconData chatAttachmentIcon(ChatAttachmentChoice choice) => switch (choice) {
+  ChatAttachmentChoice.photo => Icons.image_outlined,
+  ChatAttachmentChoice.video => Icons.videocam_outlined,
+  ChatAttachmentChoice.document => Icons.folder_outlined,
+  ChatAttachmentChoice.gif => Icons.gif_box_outlined,
+};
 
 String chatAttachmentLabel(AppStrings strings, ChatAttachmentChoice choice) =>
     switch (choice) {
@@ -72,7 +74,6 @@ String chatAttachmentLabel(AppStrings strings, ChatAttachmentChoice choice) =>
       ChatAttachmentChoice.video => strings.attachVideo,
       ChatAttachmentChoice.document => strings.attachDocument,
       ChatAttachmentChoice.gif => strings.attachGif,
-      ChatAttachmentChoice.sticker => strings.attachStickerFromGallery,
     };
 
 /// Opens the sheet and reports what was chosen, or null when it was dismissed.

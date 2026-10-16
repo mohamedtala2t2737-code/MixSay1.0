@@ -285,8 +285,6 @@ class AppStrings {
   String get attach => isArabic ? 'مرفق' : 'Attachment';
   String get attachDocument => isArabic ? 'مستند' : 'Document';
   String get attachGif => isArabic ? 'صورة متحركة' : 'GIF';
-  String get attachStickerFromGallery =>
-      isArabic ? 'ملصق من الصور عندك' : 'Sticker from your own pictures';
   String get playVoiceMessage =>
       isArabic ? 'تشغيل الرسالة الصوتية' : 'Play voice message';
   String get pauseVoiceMessage => isArabic ? 'إيقاف مؤقت' : 'Pause';

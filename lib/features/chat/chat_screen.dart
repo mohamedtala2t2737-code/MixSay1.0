@@ -320,8 +320,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         await _sendDocument();
       case ChatAttachmentChoice.gif:
         await _sendGif();
-      case ChatAttachmentChoice.sticker:
-        setState(() => _showStickerPicker = true);
     }
   }
 
