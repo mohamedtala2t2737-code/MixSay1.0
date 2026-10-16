@@ -11,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -21,7 +22,9 @@ import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/widgets/app_list_tile.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
+import 'package:social_chat/features/chat/chat_attachment_sheet.dart';
 import 'package:social_chat/features/chat/chat_emoji_picker.dart';
+import 'package:social_chat/features/chat/chat_gif_search.dart';
 import 'package:social_chat/features/chat/chat_media.dart';
 import 'package:social_chat/features/chat/chat_message_bubble.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
@@ -295,29 +298,131 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  Future<void> _sendImage() async {
+  /// What the paperclip does with each row of the attach sheet. Every kind has a
+  /// real sender here, so a row the plan lists is never a row that does nothing.
+  Future<void> _openAttachments() async {
+    if (_sending) return;
+    final options = ChatAttachmentSheet.availableOptions();
+    final choice = await showChatAttachmentSheet(context, options: options);
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case ChatAttachmentChoice.photo:
+        await _sendPhoto();
+      case ChatAttachmentChoice.video:
+        await _sendVideo();
+      case ChatAttachmentChoice.document:
+        await _sendDocument();
+      case ChatAttachmentChoice.gif:
+        await _sendGif();
+      case ChatAttachmentChoice.sticker:
+        setState(() => _showStickerPicker = true);
+    }
+  }
+
+  Future<void> _sendPhoto() async {
     if (_sending) return;
     final picked = await _imagePicker.pickImage(source: ImageSource.gallery);
     if (picked == null || !mounted) return;
+    await _sendDraft((clientId) => _compressedPhoto(picked, clientId));
+  }
 
-    setState(() => _sending = true);
+  Future<void> _sendVideo() async {
+    if (_sending) return;
+    final picked = await _imagePicker.pickVideo(source: ImageSource.gallery);
+    if (picked == null || !mounted) return;
+    await _sendDraft(
+      (clientId) => chatVideoDraft(
+        pickedPath: picked.path,
+        pickedName: picked.name,
+        clientId: clientId,
+      ),
+    );
+  }
+
+  /// A document is measured and copied before anything is sent: the picker can
+  /// report a size without opening the file, and a ceiling refusal should never
+  /// cost the user a copy they were never going to be allowed to upload.
+  Future<void> _sendDocument() async {
+    if (_sending) return;
+    final file = await FilePicker.pickFile();
+    if (file == null || !mounted) return;
+    final size = file.lengthSync() ?? await file.length();
+    if (size != null && size > ChatFeatures.maxFileBytes) {
+      if (!mounted) return;
+      _showAttachmentFailure(
+        ChatAttachmentRejectedException(
+          'tooLarge',
+          limitBytes: ChatFeatures.maxFileBytes,
+        ),
+      );
+      return;
+    }
+    // A uri the app cannot open as a file still gives up its bytes, and the copy
+    // is what the offline queue finds after a restart.
+    final bytes = file.path == null ? await file.readAsBytes() : null;
+    if (!mounted) return;
+    final directory = (await getTemporaryDirectory()).path;
+    await _sendDraft(
+      (clientId) => chatDocumentDraft(
+        fileName: file.name,
+        pickedPath: file.path,
+        pickedBytes: bytes,
+        directory: directory,
+        clientId: clientId,
+      ),
+    );
+  }
+
+  /// A GIF is never uploaded: the message stores the url the search returned,
+  /// which is the one thing `firestore.rules` accepts for that type.
+  Future<void> _sendGif() async {
+    if (_sending) return;
+    final gif = await showChatGifPicker(context);
+    if (gif == null || !mounted) return;
+    await _sendDraft(
+      (clientId) => ChatAttachmentDraft(
+        type: ChatMessageType.gif,
+        localPath: gif.url,
+        fileName: '$clientId.gif',
+        byteSize: 0,
+      ),
+    );
+  }
+
+  /// Sends an attachment, or parks it in the offline queue with its file copied
+  /// beside the queue entry. Every kind comes through here so the retry path and
+  /// the "why did this fail" wording stay the same for all of them.
+  Future<void> _sendDraft(
+    FutureOr<ChatAttachmentDraft> Function(String clientId) buildDraft,
+  ) async {
+    if (_sending) return;
+    final replyingToSnapshot = _replyingTo;
+    final replyTo = replyingToSnapshot == null
+        ? null
+        : ChatReply.quoteFrom(replyingToSnapshot);
+    setState(() {
+      _sending = true;
+      _replyingTo = null;
+    });
     final repository = ref.read(chatRepositoryProvider);
     final clientId = repository.createClientId();
     ChatAttachmentDraft? draft;
     try {
-      draft = await _compressedPhoto(picked, clientId);
+      draft = await buildDraft(clientId);
       final connected = await _hasNetworkConnection();
       final message = connected
           ? await repository.sendMedia(
               conversationId: widget.conversationId,
               draft: draft,
               clientId: clientId,
+              replyTo: replyTo,
             )
           : await repository.queueMessage(
               conversationId: widget.conversationId,
               text: '',
               clientId: clientId,
               attachment: draft,
+              replyTo: replyTo,
             );
       if (!mounted) return;
       _insertOrReplaceMessage(message);
@@ -333,6 +438,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             text: '',
             clientId: clientId,
             attachment: staged,
+            replyTo: replyTo,
           );
           if (!mounted) return;
           _insertOrReplaceMessage(pending);
@@ -346,13 +452,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
       debugPrint('Unable to send chat attachment: $error');
       if (!mounted) return;
-      setState(() => _sending = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(content: Text(_attachmentFailureMessage(error))),
-        );
+      setState(() {
+        _sending = false;
+        _replyingTo = replyingToSnapshot;
+      });
+      _showAttachmentFailure(error);
     }
+  }
+
+  void _showAttachmentFailure(Object error) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(_attachmentFailureMessage(error))),
+      );
   }
 
   /// Sends a sticker from a bundled pack: one document write, no upload, and
@@ -1083,13 +1196,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               }),
                               icon: const Icon(Icons.sticky_note_2_outlined),
                             ),
-                          // Hidden completely while the free plan is in force, so
-                          // nobody can reach a control that would cost money.
-                          if (ChatFeatures.images)
+                          // The paperclip is the only door to an attachment, and it
+                          // disappears while the free plan is in force, so nobody can
+                          // reach a control that would cost money.
+                          if (ChatAttachmentSheet.availableOptions().isNotEmpty)
                             IconButton(
-                              tooltip: s.sendImage,
-                              onPressed: _sending ? null : _sendImage,
-                              icon: const Icon(Icons.image_outlined),
+                              tooltip: s.attach,
+                              onPressed: _sending ? null : _openAttachments,
+                              icon: const Icon(Icons.add_circle_outline),
                             ),
                           Expanded(
                             child: TextField(
