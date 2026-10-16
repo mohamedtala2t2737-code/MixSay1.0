@@ -71,8 +71,9 @@ class _MainShellState extends ConsumerState<MainShell> {
     final unread = ref.watch(unreadNotificationsCountProvider);
 
     return Scaffold(
-      // The bar is transparent, so the tabs may run under it; each one leaves
-      // MixSayBottomBar.barHeight of bottom clearance for the last row.
+      // The black bar is opaque but has no edge, so the tabs may run under it;
+      // each one leaves MixSayBottomBar.barHeight of bottom clearance for the
+      // last row.
       extendBody: true,
       appBar: _buildAppBar(s, context),
       body: IndexedStack(

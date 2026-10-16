@@ -14,8 +14,9 @@ import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
-import 'package:social_chat/features/home/presentation/main_shell.dart';
 import 'package:social_chat/features/home/presentation/home_tab.dart';
+import 'package:social_chat/features/home/presentation/main_shell.dart';
+import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
 import 'package:social_chat/features/notifications/data/notification_repository.dart';
 import 'package:social_chat/features/notifications/presentation/notification_providers.dart';
 import 'package:social_chat/features/profile/data/follow_repository.dart';
@@ -35,11 +36,13 @@ class _EmptyTab extends ProfileTabPostsController {
   _EmptyTab(super.authorId, super.tab);
 
   @override
-  Future<ProfileTabPosts> build() async =>
-      const ProfileTabPosts(posts: []);
+  Future<ProfileTabPosts> build() async => const ProfileTabPosts(posts: []);
 }
 
-Widget _harness(Locale locale) => ProviderScope(
+Widget _harness(
+  Locale locale, {
+  ThemeMode themeMode = ThemeMode.dark,
+}) => ProviderScope(
   overrides: [
     currentUserIdProvider.overrideWithValue('user-me'),
     currentProfileProvider.overrideWith((ref) async => _me),
@@ -50,9 +53,7 @@ Widget _harness(Locale locale) => ProviderScope(
     // The profile's content tabs, empty like the wall above them. Without this
     // the tab would try to reach Firestore and report a load failure instead of
     // an empty account.
-    profileTabPostsProvider.overrideWith2(
-      (key) => _EmptyTab(key.$1, key.$2),
-    ),
+    profileTabPostsProvider.overrideWith2((key) => _EmptyTab(key.$1, key.$2)),
     followerCountProvider.overrideWith(
       (ref, userId) async => const FollowCount(0),
     ),
@@ -73,7 +74,7 @@ Widget _harness(Locale locale) => ProviderScope(
     locale: locale,
     theme: AppTheme.light,
     darkTheme: AppTheme.dark,
-    themeMode: ThemeMode.dark,
+    themeMode: themeMode,
     localizationsDelegates: const [
       AppStrings.delegate,
       ...GlobalMaterialLocalizations.delegates,
@@ -226,13 +227,11 @@ void main() {
 
       Color iconColor(IconData icon) =>
           tester.widget<Icon>(find.byIcon(icon)).color!;
-      final scheme = Theme.of(tester.element(find.byIcon(Icons.home_filled)))
-          .colorScheme;
 
-      // Home starts selected, so the create item must not be the primary colour
-      // even though it now lives between the tabs.
-      expect(iconColor(Icons.home_filled), scheme.primary);
-      expect(iconColor(Icons.add_rounded), scheme.onSurfaceVariant);
+      // Home starts selected, so the create item must not take the selected
+      // colour even though it now lives between the tabs.
+      expect(iconColor(Icons.home_filled), AppColors.navIconSelected);
+      expect(iconColor(Icons.add_rounded), AppColors.navIconUnselected);
 
       await tester.tap(find.byIcon(Icons.add_rounded));
       await tester.pumpAndSettle();
@@ -241,7 +240,7 @@ void main() {
       expect(find.text('Post'), findsOneWidget);
       // The shell is still on Home behind the sheet.
       expect(find.text('MixSay'), findsOneWidget);
-      expect(iconColor(Icons.add_rounded), scheme.onSurfaceVariant);
+      expect(iconColor(Icons.add_rounded), AppColors.navIconUnselected);
     },
   );
 
@@ -254,25 +253,26 @@ void main() {
 
     Color iconColor(IconData icon) =>
         tester.widget<Icon>(find.byIcon(icon)).color!;
-    final scheme = Theme.of(tester.element(find.byIcon(Icons.home_filled)))
-        .colorScheme;
 
     await tester.tap(find.byIcon(Icons.account_circle_outlined));
     await tester.pumpAndSettle();
-    expect(iconColor(Icons.account_circle_outlined), scheme.primary);
-    expect(iconColor(Icons.home_filled), scheme.onSurfaceVariant);
+    expect(iconColor(Icons.account_circle_outlined), AppColors.navIconSelected);
+    expect(iconColor(Icons.home_filled), AppColors.navIconUnselected);
     // The profile tab paints its own bar, with the account handle in it.
     expect(find.text('mixsay.user'), findsOneWidget);
     expect(find.byType(AppBar), findsNothing);
 
     await tester.tap(find.byIcon(Icons.mail_outline_rounded));
     await tester.pumpAndSettle();
-    expect(iconColor(Icons.mail_outline_rounded), scheme.primary);
-    expect(iconColor(Icons.account_circle_outlined), scheme.onSurfaceVariant);
+    expect(iconColor(Icons.mail_outline_rounded), AppColors.navIconSelected);
+    expect(
+      iconColor(Icons.account_circle_outlined),
+      AppColors.navIconUnselected,
+    );
 
     await tester.tap(find.byIcon(Icons.home_filled));
     await tester.pumpAndSettle();
-    expect(iconColor(Icons.home_filled), scheme.primary);
+    expect(iconColor(Icons.home_filled), AppColors.navIconSelected);
     expect(find.text('MixSay'), findsOneWidget);
   });
 
@@ -304,6 +304,45 @@ void main() {
       greaterThan(_centerX(tester, find.byIcon(Icons.account_circle_outlined))),
     );
   });
+
+  testWidgets(
+    'the bar is solid black and keeps its icons readable in both themes',
+    (tester) async {
+      _usePhoneViewport(tester);
+
+      Color barColor(ThemeMode mode) {
+        // Only the bar's own Material is looked at: the Scaffold wraps the slot
+        // in materials of its own, and the bar is the outermost one there.
+        final material = tester.widget<Material>(
+          find
+              .descendant(
+                of: find.byType(MixSayBottomBar),
+                matching: find.byType(Material),
+              )
+              .first,
+        );
+        expect(material.type, MaterialType.canvas);
+        return material.color!;
+      }
+
+      Color iconColor(IconData icon) =>
+          tester.widget<Icon>(find.byIcon(icon)).color!;
+
+      for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+        await tester.pumpWidget(_harness(const Locale('en'), themeMode: mode));
+        await tester.pumpAndSettle();
+
+        expect(barColor(mode), AppColors.navBar);
+        // Black is black in a light theme too, so the muted icon colour has to be
+        // the one meant for dark surfaces or the tabs would read as smudges.
+        expect(iconColor(Icons.home_filled), AppColors.navIconSelected);
+        expect(
+          iconColor(Icons.account_circle_outlined),
+          AppColors.navIconUnselected,
+        );
+      }
+    },
+  );
 
   testWidgets('tapping a tab swaps the bar above the content', (tester) async {
     _usePhoneViewport(tester);

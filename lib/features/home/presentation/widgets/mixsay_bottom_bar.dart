@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/theme/app_colors.dart';
 
 /// Flat five-slot bottom bar: Home, Messages, create post, Notifications,
 /// Profile. Icons only — the name of each tab is a `Tooltip`, and screen
@@ -66,11 +67,11 @@ class MixSayBottomBar extends StatelessWidget {
       ),
     ];
 
-    // Transparent and edgeless: the shell sets `extendBody: true` so the feed
-    // scrolls underneath this bar, and each tab leaves [barHeight] of bottom
-    // clearance so nothing sits permanently behind it.
+    // Black and edgeless: the shell sets `extendBody: true` so the feed scrolls
+    // underneath this bar, and each tab leaves [barHeight] of bottom clearance
+    // so nothing sits permanently behind it.
     return Material(
-      type: MaterialType.transparency,
+      color: AppColors.navBar,
       child: SafeArea(
         top: false,
         child: SizedBox(
@@ -102,10 +103,12 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    // The bar is black whatever theme the rest of the app uses, so its icons
+    // take the fixed pair rather than the scheme's muted gray, which would
+    // disappear on black in a light theme.
     final color = selected
-        ? theme.colorScheme.primary
-        : theme.colorScheme.onSurfaceVariant;
+        ? AppColors.navIconSelected
+        : AppColors.navIconUnselected;
 
     return Tooltip(
       message: label,
@@ -115,6 +118,7 @@ class _NavItem extends StatelessWidget {
           child: Badge.count(
             count: badge,
             isLabelVisible: badge > 0,
+            backgroundColor: AppColors.navBadge,
             child: Icon(icon, size: 30, color: color),
           ),
         ),

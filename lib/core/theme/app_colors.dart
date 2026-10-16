@@ -40,6 +40,15 @@ class AppColors {
   static const borderOnLight = Color(0xFFDADCE5);
   static const borderOnDark = Color(0xFF2A2A35);
 
+  /// The main tabs' bottom bar. It is black in both themes, so the icons on it
+  /// cannot take the theme's muted gray: that one is dark on purpose and would
+  /// vanish here. The selected state uses a bright brand stop, not
+  /// [brandPurple], for the same reason.
+  static const navBar = Color(0xFF000000);
+  static const navIconSelected = brandBlue;
+  static const navIconUnselected = textMutedOnDark;
+  static const navBadge = brandPink;
+
   static Color fieldFill(Brightness brightness) =>
       brightness == Brightness.light ? lightSurface : darkSurface;
 
