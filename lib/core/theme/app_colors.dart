@@ -78,4 +78,28 @@ class AppColors {
   /// the thread readable straight away.
   static Color chatAppBar(Brightness brightness) =>
       brightness == Brightness.light ? chatOutgoingOnDark : chatAppBarDark;
+
+  /// The name and the bar of a quoted message. The pale light-theme bubbles take
+  /// the button green; over the dark green bubble that same green is too close
+  /// to the background to see, so the dark theme gets its lighter sibling.
+  static const chatQuoteGreenOnDark = Color(0xFF7BD8A8);
+
+  static Color chatQuoteAccent(Brightness brightness) =>
+      brightness == Brightness.light ? chatActionGreen : chatQuoteGreenOnDark;
+
+  /// A small rounded chip that sits on the thread itself: a date separator, or
+  /// the time over a sticker.
+  static Color chatChip(Brightness brightness) =>
+      brightness == Brightness.light ? Color(0xFFDDE5DE) : Color(0xFF1B2A24);
+
+  static Color chatChipText(Brightness brightness) =>
+      brightness == Brightness.light ? textOnLight : textMutedOnDark;
+
+  /// The blue a read receipt turns. The brand blue is bright enough over the
+  /// dark green bubble but nearly disappears on the pale light-theme one, so
+  /// that theme gets the deeper shade of the same blue.
+  static const chatReadBlueOnLight = Color(0xFF0A84C7);
+
+  static Color chatTickRead(Brightness brightness) =>
+      brightness == Brightness.light ? chatReadBlueOnLight : brandBlue;
 }

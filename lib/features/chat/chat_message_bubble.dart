@@ -37,6 +37,8 @@ class ChatMessageBubble extends StatelessWidget {
     this.onVoiceTap,
     this.onFileTap,
     this.onLongPress,
+    this.onReplyTap,
+    this.isGroupStart = true,
   });
 
   final ChatMessage message;
@@ -64,6 +66,16 @@ class ChatMessageBubble extends StatelessWidget {
   final VoidCallback? onVoiceTap;
   final VoidCallback? onFileTap;
   final VoidCallback? onLongPress;
+
+  /// Tapping the quoted block, which is how the thread jumps back to the
+  /// message that started it. Null when the screen has that message on hand
+  /// nowhere to scroll to, so the block never looks tappable when it is not.
+  final VoidCallback? onReplyTap;
+
+  /// Whether the message before this one came from the other side. A group of
+  /// one person's messages sits close together and only the first of a group
+  /// leaves room, which is what makes a thread readable without names on it.
+  final bool isGroupStart;
 
   bool get _showsMedia =>
       localImagePath != null ||
@@ -147,11 +159,109 @@ class ChatMessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final strings = AppStrings.of(context);
-    final bubbleColor = isOutgoing
-        ? AppColors.brandPurple
-        : theme.colorScheme.surfaceContainerHighest;
-    final textColor = isOutgoing ? Colors.white : theme.colorScheme.onSurface;
+    final brightness = theme.brightness;
+    final bubbleColor = AppColors.chatBubble(isOutgoing, brightness);
+    final textColor = AppColors.chatBubbleText(brightness);
+    final timeColor = textColor.withValues(alpha: 0.65);
     final media = message.deletedForEveryone ? null : _mediaBlock();
+    // The artwork carries its own shape, so a coloured card under it reads as a
+    // photo that failed to load; its time floats over the corner instead.
+    final isSticker = _isSticker && media != null;
+
+    final Widget bubble;
+    if (isSticker) {
+      bubble = Stack(
+        children: [
+          media,
+          PositionedDirectional(
+            bottom: 0,
+            end: 4,
+            child: _TimeChip(
+              createdAt: message.createdAt,
+              status: message.status,
+              isOutgoing: isOutgoing,
+            ),
+          ),
+        ],
+      );
+    } else {
+      bubble = Container(
+        padding: EdgeInsets.zero,
+        decoration: BoxDecoration(
+          color: bubbleColor,
+          borderRadius: BorderRadiusDirectional.only(
+            topStart: const Radius.circular(16),
+            topEnd: const Radius.circular(16),
+            bottomStart: Radius.circular(isOutgoing ? 16 : 6),
+            bottomEnd: Radius.circular(isOutgoing ? 6 : 16),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 5),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (message.replyTo != null)
+                _ReplyQuote(
+                  isOutgoing: isOutgoing,
+                  author: _replyAuthorName(strings),
+                  preview: _replyPreview(strings),
+                  onTap: onReplyTap,
+                ),
+              if (message.deletedForEveryone)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.remove_circle_outline,
+                      size: 18,
+                      color: timeColor,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      strings.messageDeleted,
+                      style: TextStyle(
+                        color: timeColor,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                )
+              else ...[
+                ?media,
+                if (message.content.isNotEmpty)
+                  Padding(
+                    padding: media != null
+                        ? const EdgeInsets.only(top: 6)
+                        : EdgeInsets.zero,
+                    child: Text(
+                      message.content,
+                      textDirection: _contentDirection(),
+                      style: TextStyle(color: textColor),
+                    ),
+                  ),
+              ],
+              // The clock and the ticks live in the bubble's own corner, which
+              // is what leaves the thread readable as a run of messages. A Row
+              // rather than an Align: Align would take the whole width on offer
+              // and stretch the bubble out beside a short message.
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _TimeAndStatus(
+                    createdAt: message.createdAt,
+                    status: message.status,
+                    isOutgoing: isOutgoing,
+                    color: timeColor,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Align(
       alignment: isOutgoing
@@ -159,94 +269,18 @@ class ChatMessageBubble extends StatelessWidget {
           : AlignmentDirectional.centerStart,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.72,
+          maxWidth: MediaQuery.sizeOf(context).width * 0.75,
         ),
         child: Column(
           crossAxisAlignment: isOutgoing
               ? CrossAxisAlignment.end
               : CrossAxisAlignment.start,
           children: [
-            GestureDetector(
-              onLongPress: message.deletedForEveryone ? null : onLongPress,
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                padding: _isSticker ? EdgeInsets.zero : const EdgeInsets.all(8),
-                decoration: _isSticker
-                    ? null
-                    : BoxDecoration(
-                        color: bubbleColor,
-                        borderRadius: BorderRadiusDirectional.only(
-                          topStart: const Radius.circular(16),
-                          topEnd: const Radius.circular(16),
-                          bottomStart: Radius.circular(isOutgoing ? 16 : 4),
-                          bottomEnd: Radius.circular(isOutgoing ? 4 : 16),
-                        ),
-                      ),
-                child: message.deletedForEveryone
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.remove_circle_outline,
-                            size: 18,
-                            color: textColor.withValues(alpha: 0.7),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            strings.messageDeleted,
-                            style: TextStyle(
-                              color: textColor.withValues(alpha: 0.8),
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (message.replyTo != null)
-                            _ReplyQuote(
-                              isOutgoing: isOutgoing,
-                              author: _replyAuthorName(strings),
-                              preview: _replyPreview(strings),
-                            ),
-                          ?media,
-                          if (message.content.isNotEmpty)
-                            Padding(
-                              padding: media != null
-                                  ? const EdgeInsets.only(top: 6)
-                                  : EdgeInsets.zero,
-                              child: Text(
-                                message.content,
-                                textDirection: _contentDirection(),
-                                style: TextStyle(color: textColor),
-                              ),
-                            ),
-                        ],
-                      ),
-              ),
-            ),
             Padding(
-              padding: EdgeInsetsDirectional.only(
-                start: isOutgoing ? 0 : 8,
-                end: isOutgoing ? 8 : 0,
-                bottom: 8,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    chatTimeLabel(strings, message.createdAt),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (isOutgoing) ...[
-                    const SizedBox(width: 4),
-                    _StatusTicks(status: message.status),
-                  ],
-                ],
+              padding: EdgeInsets.only(top: isGroupStart ? 10 : 2),
+              child: GestureDetector(
+                onLongPress: message.deletedForEveryone ? null : onLongPress,
+                child: bubble,
               ),
             ),
             if (isOutgoing && message.status == 'failed')
@@ -272,6 +306,77 @@ class ChatMessageBubble extends StatelessWidget {
   }
 }
 
+/// The clock, and the ticks that say where the message has got to.
+class _TimeAndStatus extends StatelessWidget {
+  const _TimeAndStatus({
+    required this.createdAt,
+    required this.status,
+    required this.isOutgoing,
+    required this.color,
+  });
+
+  final DateTime createdAt;
+  final String status;
+  final bool isOutgoing;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          chatTimeLabel(AppStrings.of(context), createdAt),
+          style: TextStyle(fontSize: 11, color: color),
+        ),
+        if (isOutgoing) ...[
+          const SizedBox(width: 4),
+          _StatusTicks(status: status, color: color),
+        ],
+      ],
+    );
+  }
+}
+
+/// The same clock on top of a sticker, where there is no bubble to sit in, so
+/// it brings its own soft background to stay legible over any artwork.
+class _TimeChip extends StatelessWidget {
+  const _TimeChip({
+    required this.createdAt,
+    required this.status,
+    required this.isOutgoing,
+  });
+
+  final DateTime createdAt;
+  final String status;
+  final bool isOutgoing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            chatTimeLabel(AppStrings.of(context), createdAt),
+            style: const TextStyle(fontSize: 10, color: Colors.white),
+          ),
+          if (isOutgoing)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 4),
+              child: _StatusTicks(status: status, color: Colors.white70),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The quoted message shown inside a reply bubble. It is the snapshot that
 /// travelled with the new message, so rendering it costs no extra read and it
 /// survives the original being deleted.
@@ -280,24 +385,23 @@ class _ReplyQuote extends StatelessWidget {
     required this.isOutgoing,
     required this.author,
     required this.preview,
+    this.onTap,
   });
 
   final bool isOutgoing;
   final String author;
   final String preview;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final accent = isOutgoing
-        ? Colors.white.withValues(alpha: 0.85)
-        : AppColors.brandPurple;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
+    final brightness = Theme.of(context).brightness;
+    final accent = AppColors.chatQuoteAccent(brightness);
+    final body = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: (isOutgoing ? Colors.white : theme.colorScheme.surface)
-            .withValues(alpha: isOutgoing ? 0.16 : 0.6),
+        color: AppColors.chatBubbleText(brightness)
+            .withValues(alpha: isOutgoing ? 0.07 : 0.05),
         borderRadius: BorderRadius.circular(8),
         border: BorderDirectional(start: BorderSide(color: accent, width: 3)),
       ),
@@ -319,14 +423,22 @@ class _ReplyQuote extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: isOutgoing
-                  ? Colors.white
-                  : theme.colorScheme.onSurfaceVariant,
+              color: AppColors.chatBubbleText(brightness)
+                  .withValues(alpha: 0.7),
               fontSize: 12,
             ),
           ),
         ],
       ),
+    );
+    if (onTap == null) {
+      // The message it quotes is not on this screen, so the block stays a
+      // quotation rather than pretending to be a link.
+      return Padding(padding: const EdgeInsets.only(bottom: 6), child: body);
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: GestureDetector(onTap: onTap, child: body),
     );
   }
 }
@@ -370,8 +482,8 @@ class _StickerContent extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Image.asset(
         asset,
-        width: 132,
-        height: 132,
+        width: 152,
+        height: 152,
         fit: BoxFit.contain,
         semanticLabel: stickerId,
         errorBuilder: (_, _, _) =>
@@ -602,6 +714,12 @@ class ChatVoicePlayback {
   final int? durationMs;
 }
 
+/// What a media control paints with: the bubble's own text colour on my side,
+/// and the thread's green on theirs, where a bare icon would read as disabled.
+Color _ink(Brightness brightness, bool isOutgoing) => isOutgoing
+    ? AppColors.chatBubbleText(brightness)
+    : AppColors.chatQuoteAccent(brightness);
+
 /// A voice note: the play button, how far it has got, and how long it runs.
 class _VoiceContent extends StatelessWidget {
   const _VoiceContent({
@@ -621,10 +739,9 @@ class _VoiceContent extends StatelessWidget {
     final theme = Theme.of(context);
     final strings = AppStrings.of(context);
     final current = playback;
-    final accent = isOutgoing ? Colors.white : AppColors.brandPurple;
-    final track = isOutgoing
-        ? Colors.white.withValues(alpha: 0.35)
-        : theme.colorScheme.outlineVariant;
+    final accent = _ink(theme.brightness, isOutgoing);
+    final track = AppColors.chatBubbleText(theme.brightness)
+        .withValues(alpha: 0.3);
     return Semantics(
       button: true,
       label: current?.isPlaying == true
@@ -665,9 +782,7 @@ class _VoiceContent extends StatelessWidget {
               ),
               style: TextStyle(
                 fontSize: 11,
-                color: isOutgoing
-                    ? Colors.white
-                    : theme.colorScheme.onSurfaceVariant,
+                color: AppColors.chatBubbleText(theme.brightness),
               ),
             ),
           ],
@@ -699,10 +814,9 @@ class _FileContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final strings = AppStrings.of(context);
-    final accent = isOutgoing ? Colors.white : AppColors.brandPurple;
-    final track = isOutgoing
-        ? Colors.white.withValues(alpha: 0.35)
-        : theme.colorScheme.outlineVariant;
+    final accent = _ink(theme.brightness, isOutgoing);
+    final track = AppColors.chatBubbleText(theme.brightness)
+        .withValues(alpha: 0.3);
     return InkWell(
       onTap: onTap,
       child: ConstrainedBox(
@@ -723,9 +837,7 @@ class _FileContent extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: isOutgoing
-                          ? Colors.white
-                          : theme.colorScheme.onSurface,
+                      color: AppColors.chatBubbleText(theme.brightness),
                     ),
                   ),
                   if (fileSize != null)
@@ -733,9 +845,8 @@ class _FileContent extends StatelessWidget {
                       strings.chatSizeLimit(fileSize!),
                       style: TextStyle(
                         fontSize: 11,
-                        color: isOutgoing
-                            ? Colors.white70
-                            : theme.colorScheme.onSurfaceVariant,
+                        color: AppColors.chatBubbleText(theme.brightness)
+                            .withValues(alpha: 0.7),
                       ),
                     ),
                   if (progress != null) ...[
@@ -772,9 +883,13 @@ class _FileContent extends StatelessWidget {
 }
 
 class _StatusTicks extends StatelessWidget {
-  const _StatusTicks({required this.status});
+  const _StatusTicks({required this.status, required this.color});
 
   final String status;
+
+  /// What the tick looks like before a read receipt arrives. The caller knows
+  /// what sits behind it: a bubble's own text colour, or white over a sticker.
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -787,8 +902,8 @@ class _StatusTicks extends StatelessWidget {
       },
       size: 15,
       color: status == 'read'
-          ? AppColors.brandBlue
-          : theme.colorScheme.onSurfaceVariant,
+          ? AppColors.chatTickRead(theme.brightness)
+          : color,
     );
   }
 }

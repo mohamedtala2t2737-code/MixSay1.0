@@ -124,7 +124,7 @@ void main() {
       await _show(tester, _harness(_message(status: 'read')));
       expect(
         tester.widget<Icon>(find.byIcon(Icons.done_all)).color,
-        AppColors.brandBlue,
+        AppColors.chatTickRead(Brightness.light),
       );
     });
 

@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/features/chat/chat_message_bubble.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
@@ -153,7 +154,19 @@ void main() {
                 'assets/stickers/mixsay-friends/cat.png',
       );
       expect(painted, findsOneWidget);
-      expect(tester.widget<Image>(painted).width, 132);
+      expect(tester.widget<Image>(painted).width, 152);
+
+      // Nothing painted in the bubble's own colour may sit behind the artwork.
+      final bubbles = tester
+          .widgetList<Container>(find.byType(Container))
+          .where(
+            (container) =>
+                container.decoration is BoxDecoration &&
+                (container.decoration as BoxDecoration).color ==
+                    AppColors.chatBubble(true, Brightness.light),
+          )
+          .length;
+      expect(bubbles, 0);
     });
 
     testWidgets('a sticker from a newer pack says so instead of breaking', (

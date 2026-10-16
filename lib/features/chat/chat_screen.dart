@@ -219,6 +219,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// One key per message on this screen. A paged, reversed list has no index to
+  /// scroll to, so jumping back to a quoted message goes through its context.
+  final Map<String, GlobalKey> _messageKeys = {};
+
+  GlobalKey _messageKey(String messageId) =>
+      _messageKeys.putIfAbsent(messageId, GlobalKey.new);
+
+  void _scrollToMessage(String messageId) {
+    final context = _messageKeys[messageId]?.currentContext;
+    if (context == null) return;
+    Scrollable.ensureVisible(
+      context,
+      alignment: 0.3,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
   void _scrollToBottom() {
     if (!_scrollController.hasClients) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1148,6 +1166,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final visible = _messages
         .where((message) => meId == null || !message.deletedFor.contains(meId))
         .toList(growable: false);
+    // A message that left the screen takes its jump key with it, so the map
+    // never grows past what is actually on screen.
+    final loadedIds = visible.map((message) => message.id).toSet();
+    _messageKeys.removeWhere((messageId, _) => !loadedIds.contains(messageId));
 
     return Scaffold(
       appBar: AppBar(
@@ -1332,28 +1354,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         return const SizedBox.shrink();
                       }
                       final message = visible[visible.length - index - 1];
-                      final older = index == visible.length - 1
+                      final before = index == visible.length - 1
                           ? null
-                          : visible[visible.length - index - 2].createdAt;
+                          : visible[visible.length - index - 2];
                       final showDate =
-                          older == null ||
-                          !chatIsSameDay(older, message.createdAt);
+                          before == null ||
+                          !chatIsSameDay(before.createdAt, message.createdAt);
+                      final changedSender =
+                          before == null || before.senderId != message.senderId;
+                      // A quote only jumps when the message it quotes is on
+                      // this screen; otherwise it stays a plain quotation. The
+                      // loaded ids come from the list itself, because a reply
+                      // builds before the older message it quotes does.
+                      final quotedId = message.replyTo?.messageId;
+                      final canJumpToQuote =
+                          quotedId != null && loadedIds.contains(quotedId);
                       return Column(
+                        key: _messageKey(message.id),
                         children: [
                           if (showDate)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Chip(
-                                label: Text(
-                                  chatDateLabel(s, message.createdAt),
-                                ),
-                              ),
+                            _DateChip(
+                              label: chatDateLabel(s, message.createdAt),
                             ),
                           ChatMessageBubble(
                             message: message,
                             isOutgoing: message.senderId == meId,
                             currentUserId: meId ?? '',
                             otherDisplayName: displayName,
+                            isGroupStart: showDate || changedSender,
+                            onReplyTap: canJumpToQuote
+                                ? () => _scrollToMessage(quotedId)
+                                : null,
                             onLongPress: () => _showMessageActions(message),
                             onRetry: () => _retryMessage(message),
                             onDeleteFailed: () => _deleteMessage(message),
@@ -1690,3 +1721,37 @@ class _VoiceTakeBar extends StatelessWidget {
 /// What the chat app bar's three-dot menu can hand back. A row only earns its
 /// place here when tapping it does something today.
 enum _ChatMenuAction { markRead, settings }
+
+/// The day a part of the thread belongs to, in a small chip in the middle of the
+/// screen. It is deliberately quiet: it separates the days without competing
+/// with the bubbles for attention.
+class _DateChip extends StatelessWidget {
+  const _DateChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.chatChip(brightness),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.chatChipText(brightness),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
