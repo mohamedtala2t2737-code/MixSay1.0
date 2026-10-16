@@ -310,6 +310,14 @@ class AppStrings {
       ? 'البحث عن الصور المتحركة محتاج مفتاح Tenor.'
       : 'GIF search needs a Tenor API key.';
 
+  // ---------- chat app bar ----------
+  String get voiceCall => isArabic ? 'مكالمة صوتية' : 'Voice call';
+  String get videoCall => isArabic ? 'مكالمة فيديو' : 'Video call';
+  String get chatOptions => isArabic ? 'خيارات المحادثة' : 'Chat options';
+  String get callsNotReady => isArabic
+      ? 'المكالمات مش متفعّلة في النسخة دي لسه'
+      : 'Calls are not enabled in this build yet';
+
   String get startConversation => isArabic
       ? 'ابدأ محادثة مع أي شخص من حسابه أو البحث.'
       : 'Start a conversation from a profile or search.';

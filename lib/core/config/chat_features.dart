@@ -42,6 +42,13 @@ class ChatFeatures {
   /// plan; in-app notifications keep working regardless.
   static const bool pushNotifications = false;
 
+  /// Voice and video calls. Needs the `flutter_webrtc` dependency, a `calls`
+  /// collection with rules of its own, and TURN credentials for the networks
+  /// where public STUN alone cannot punch through, so the app ships without it.
+  /// While this is false the two call icons are not drawn in the chat app bar
+  /// at all.
+  static const bool calls = false;
+
   /// Upload ceilings enforced both client-side and in `storage.rules`. Keep the
   /// two in step or the server starts rejecting what the app accepted.
   static const int maxImageBytes = 5 * 1024 * 1024;

@@ -42,4 +42,40 @@ class AppColors {
 
   static Color fieldFill(Brightness brightness) =>
       brightness == Brightness.light ? lightSurface : darkSurface;
+
+  /// The chat thread's own greens and grays. A thread is scanned by side, not
+  /// by reading, so what I sent is green and what they sent is neutral gray
+  /// even though the rest of the app keeps [brandPurple].
+  static const chatOutgoingOnDark = Color(0xFF0E3B2E);
+  static const chatIncomingOnDark = Color(0xFF23262B);
+  static const chatOutgoingOnLight = Color(0xFFD7F0E1);
+  static const chatIncomingOnLight = Color(0xFFFFFFFF);
+
+  /// The round send / mic button beside the composer.
+  static const chatActionGreen = Color(0xFF159F5A);
+
+  /// Behind the thread, and behind the app bar of the chat screen only.
+  static const chatWallpaperDark = Color(0xFF0A1410);
+  static const chatWallpaperLight = Color(0xFFEFF3EE);
+  static const chatAppBarDark = Color(0xFF141B18);
+
+  static Color chatBubble(bool outgoing, Brightness brightness) {
+    if (brightness == Brightness.light) {
+      return outgoing ? chatOutgoingOnLight : chatIncomingOnLight;
+    }
+    return outgoing ? chatOutgoingOnDark : chatIncomingOnDark;
+  }
+
+  /// Text inside a bubble. The light theme's bubbles are pale, so it goes dark
+  /// there and stays white over the dark green and gray.
+  static Color chatBubbleText(Brightness brightness) =>
+      brightness == Brightness.light ? textOnLight : textOnDark;
+
+  static Color chatWallpaper(Brightness brightness) =>
+      brightness == Brightness.light ? chatWallpaperLight : chatWallpaperDark;
+
+  /// The chat app bar keeps the dark look in both themes, which is what makes
+  /// the thread readable straight away.
+  static Color chatAppBar(Brightness brightness) =>
+      brightness == Brightness.light ? chatOutgoingOnDark : chatAppBarDark;
 }

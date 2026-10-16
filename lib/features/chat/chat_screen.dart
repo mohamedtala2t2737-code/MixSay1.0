@@ -20,6 +20,7 @@ import 'package:social_chat/core/errors/app_exceptions.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/widgets/app_list_tile.dart';
+import 'package:social_chat/core/widgets/app_settings_sheet.dart';
 import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/chat/chat_attachment_sheet.dart';
@@ -33,6 +34,7 @@ import 'package:social_chat/features/chat/chat_repository.dart';
 import 'package:social_chat/features/chat/chat_stickers.dart';
 import 'package:social_chat/features/chat/chat_time_labels.dart';
 import 'package:social_chat/features/chat/chat_voice_recorder.dart';
+import 'package:social_chat/features/chat/chat_wallpaper.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key, required this.conversationId});
@@ -1098,6 +1100,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// The three-dot menu. Every row in it does something the moment it is
+  /// tapped: one is a read-receipt write the repository already has, the other
+  /// opens the same settings sheet the rest of the app uses.
+  Future<void> _onMenuAction(_ChatMenuAction action) async {
+    switch (action) {
+      case _ChatMenuAction.markRead:
+        await _runMessageAction(
+          () => ref
+              .read(chatRepositoryProvider)
+              .markMessagesRead(widget.conversationId),
+        );
+      case _ChatMenuAction.settings:
+        await showAppSettingsSheet(context);
+    }
+  }
+
+  /// Nothing rings from here yet: calls are Phase 4, and the two icons that
+  /// reach this are behind the `calls` flag, so they are not even drawn until
+  /// the flag is flipped on purpose.
+  void _startCall({required bool video}) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(AppStrings.of(context).callsNotReady)),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
@@ -1122,6 +1151,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: AppColors.chatAppBar(Theme.of(context).brightness),
+        foregroundColor: Colors.white,
+        titleSpacing: 0,
         title: Row(
           children: [
             UserAvatar(
@@ -1148,7 +1180,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: _otherTyping
                             ? AppColors.brandBlue
-                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                            : Colors.white.withValues(alpha: 0.75),
                       ),
                     ),
                 ],
@@ -1156,18 +1188,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ],
         ),
-      ),
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Theme.of(context).colorScheme.surface,
-              Theme.of(context).colorScheme.surfaceContainerHighest,
+        actions: [
+          // Calls are not wired up yet, so the two icons are not drawn at all
+          // while the flag is off and nobody taps something that cannot ring.
+          if (ChatFeatures.calls) ...[
+            IconButton(
+              tooltip: s.voiceCall,
+              onPressed: _sending ? null : () => _startCall(video: false),
+              icon: const Icon(Icons.call),
+            ),
+            IconButton(
+              tooltip: s.videoCall,
+              onPressed: _sending ? null : () => _startCall(video: true),
+              icon: const Icon(Icons.videocam),
+            ),
+          ],
+          PopupMenuButton<_ChatMenuAction>(
+            tooltip: s.chatOptions,
+            icon: const Icon(Icons.more_vert),
+            onSelected: _onMenuAction,
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: _ChatMenuAction.markRead,
+                child: AppListTile(
+                  leading: const Icon(Icons.done_all),
+                  title: s.markAllRead,
+                ),
+              ),
+              PopupMenuItem(
+                value: _ChatMenuAction.settings,
+                child: AppListTile(
+                  leading: const Icon(Icons.settings_outlined),
+                  title: s.settings,
+                ),
+              ),
             ],
           ),
-        ),
+        ],
+      ),
+      body: ChatWallpaper(
         child: Column(
           children: [
             if (_loading)
@@ -1627,3 +1686,7 @@ class _VoiceTakeBar extends StatelessWidget {
     );
   }
 }
+
+/// What the chat app bar's three-dot menu can hand back. A row only earns its
+/// place here when tapping it does something today.
+enum _ChatMenuAction { markRead, settings }
