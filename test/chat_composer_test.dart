@@ -323,6 +323,12 @@ void main() {
         tabs.contains(ChatTrayTab.stickers),
         !ChatMessageType.sticker.isGated,
       );
+      // A bookmark is a reference into a bundled pack, so no bundled pack means
+      // no shelf — even if uploaded stickers were switched on.
+      expect(
+        tabs.contains(ChatTrayTab.saved),
+        ChatFeatures.bundledStickers && !ChatMessageType.sticker.isGated,
+      );
       expect(
         tabs.contains(ChatTrayTab.gif),
         ChatFeatures.gifSearch && ChatSecrets.hasTenorKey,
@@ -339,12 +345,24 @@ void main() {
       );
     });
 
-    test('there is no saved tab until saving exists', () {
+    test('the shelf leads and the browse lists follow', () {
       expect(ChatTrayTab.values.map((tab) => tab.name).toList(), [
-        'emoji',
+        'saved',
         'stickers',
+        'emoji',
         'gif',
       ]);
+    });
+
+    test('the shelf tab sends the same id the pack grid sends', () {
+      // One send path for both tabs: a saved sticker is the picture, not a copy
+      // of it, so there is nothing extra for the screen to learn.
+      expect(
+        _traySource,
+        contains(
+          'ChatTrayTab.saved => ChatSavedStickerPicker(onSelected: widget.onSticker)',
+        ),
+      );
     });
 
     testWidgets('with no tabs it draws nothing', (tester) async {

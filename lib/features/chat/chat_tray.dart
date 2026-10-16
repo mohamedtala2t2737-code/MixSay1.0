@@ -6,13 +6,11 @@ import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/features/chat/chat_emoji_picker.dart';
 import 'package:social_chat/features/chat/chat_gif_search.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
+import 'package:social_chat/features/chat/chat_saved_sticker_picker.dart';
 import 'package:social_chat/features/chat/chat_stickers.dart';
 
 /// What the panel under the composer can show.
-///
-/// There is no "Saved" tab yet: saving a sticker is Phase 3, and a star tab with
-/// nothing behind it is exactly the dead control this app keeps off screen.
-enum ChatTrayTab { emoji, stickers, gif }
+enum ChatTrayTab { saved, stickers, emoji, gif }
 
 /// The panel that takes the keyboard's place. One tab bar, one body, and a tab
 /// only appears when tapping it really produces something.
@@ -46,8 +44,14 @@ class ChatTray extends StatefulWidget {
   /// is not offered as a tab, and a sticker type the plan cannot store does not
   /// appear either.
   static List<ChatTrayTab> availableTabs() => [
-    if (ChatFeatures.emojiPicker) ChatTrayTab.emoji,
+    // The shelf leads: it is the short list the user chose, while the pack grid
+    // and the emoji keyboard are the long lists to browse. A bookmark is a
+    // reference into a bundled pack, so with no bundled pack there is no shelf
+    // to open — even when uploaded stickers are on.
+    if (ChatFeatures.bundledStickers && !ChatMessageType.sticker.isGated)
+      ChatTrayTab.saved,
     if (!ChatMessageType.sticker.isGated) ChatTrayTab.stickers,
+    if (ChatFeatures.emojiPicker) ChatTrayTab.emoji,
     if (ChatFeatures.gifSearch && ChatSecrets.hasTenorKey) ChatTrayTab.gif,
   ];
 
@@ -91,14 +95,16 @@ class _ChatTrayState extends State<ChatTray> with TickerProviderStateMixin {
   }
 
   String _label(ChatTrayTab tab, AppStrings strings) => switch (tab) {
-    ChatTrayTab.emoji => strings.emoji,
+    ChatTrayTab.saved => strings.savedStickersTab,
     ChatTrayTab.stickers => strings.stickers,
+    ChatTrayTab.emoji => strings.emoji,
     ChatTrayTab.gif => strings.attachGif,
   };
 
   Widget _body(ChatTrayTab tab) => switch (tab) {
-    ChatTrayTab.emoji => ChatEmojiPicker(onSelected: widget.onEmoji),
+    ChatTrayTab.saved => ChatSavedStickerPicker(onSelected: widget.onSticker),
     ChatTrayTab.stickers => ChatStickerPicker(onSelected: widget.onSticker),
+    ChatTrayTab.emoji => ChatEmojiPicker(onSelected: widget.onEmoji),
     ChatTrayTab.gif => ChatGifPicker(
       onSelected: (gif) => widget.onGif?.call(gif),
     ),

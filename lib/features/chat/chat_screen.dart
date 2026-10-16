@@ -33,6 +33,7 @@ import 'package:social_chat/features/chat/chat_message_bubble.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
+import 'package:social_chat/features/chat/chat_saved_stickers.dart';
 import 'package:social_chat/features/chat/chat_time_labels.dart';
 import 'package:social_chat/features/chat/chat_tray.dart';
 import 'package:social_chat/features/chat/chat_voice_recorder.dart';
@@ -1090,6 +1091,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // The payload says what a copy of this message could carry: nothing for a
     // photo or a voice note, whose file belongs to this chat alone.
     final forwardPayload = ChatForwardPayload.from(message);
+    // Only a bundled sticker can be bookmarked: an uploaded one carries a
+    // Storage path, which is a file in this chat alone, and offering to save it
+    // would put a bookmark on a shelf the tray cannot draw.
+    final savableSticker = ChatFeatures.bundledStickers
+        ? SavedSticker.fromStickerId(message.stickerId)
+        : null;
     final action = await showModalBottomSheet<_MessageAction>(
       context: context,
       showDragHandle: true,
@@ -1115,6 +1122,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 title: s.forwardAction,
                 onTap: () =>
                     Navigator.of(sheetContext).pop(_MessageAction.forward),
+              ),
+            if (savableSticker != null)
+              AppListTile(
+                leading: const Icon(Icons.star_outline),
+                title: s.saveStickerAction,
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(_MessageAction.saveSticker),
               ),
             if (isMine && !message.deletedForEveryone)
               AppListTile(
@@ -1149,6 +1163,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         _replyToMessage(message);
       case _MessageAction.forward:
         await _forwardMessage(message);
+      case _MessageAction.saveSticker:
+        await _saveSticker(message);
       case _MessageAction.deleteForMe:
         await _runMessageAction(
           () => ref
@@ -1273,6 +1289,40 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         debugPrintStack(stackTrace: queueTrace);
         return false;
       }
+    }
+  }
+
+  /// Bookmark a sticker of a bundled pack.
+  ///
+  /// The row that offers this only appears for such a sticker, so the two
+  /// refusals left are the shelf being full and the write failing, and each gets
+  /// said out loud rather than a snackbar that claims a save did happen.
+  Future<void> _saveSticker(ChatMessage message) async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+    final s = AppStrings.of(context);
+    try {
+      final outcome = await ref
+          .read(savedStickerRepositoryProvider)
+          .save(message.stickerId, userId: userId);
+      if (!mounted) return;
+      final messageText = switch (outcome) {
+        SavedStickerOutcome.saved => s.savedStickerDone,
+        SavedStickerOutcome.full => s.savedStickerFull(
+          SavedStickerRepository.capacity,
+        ),
+        SavedStickerOutcome.unknownSticker => s.savedStickerFailed,
+      };
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(messageText)));
+    } catch (error, stackTrace) {
+      debugPrint('Unable to save a sticker: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(s.savedStickerFailed)));
     }
   }
 
@@ -1754,7 +1804,14 @@ class _ReplyDraft extends StatelessWidget {
   );
 }
 
-enum _MessageAction { copy, reply, forward, deleteForMe, deleteForEveryone }
+enum _MessageAction {
+  copy,
+  reply,
+  forward,
+  saveSticker,
+  deleteForMe,
+  deleteForEveryone,
+}
 
 /// The composer while a voice note is being taken: the running clock, a cancel
 /// that throws the recording away, and a send that uploads it.

@@ -276,6 +276,51 @@ class AppStrings {
       ? 'التحويل فشل. جرّب تاني.'
       : 'The forward did not go through. Try again.';
 
+  // ---------- the saved sticker shelf ----------
+  /// The tray tab of the stickers the user kept. Short because it sits in a
+  /// tab bar next to "Stickers" and "Emoji".
+  String get savedStickersTab => isArabic ? 'محفوظة' : 'Saved';
+
+  String get saveStickerAction => isArabic ? 'حفظ الملصق' : 'Save sticker';
+
+  String get savedStickerDone => isArabic
+      ? 'الملصق ده بقى في المحفوظة'
+      : 'That sticker is on your Saved tab';
+
+  String get savedStickerRemoved =>
+      isArabic ? 'اتشال من الملصقات المحفوظة' : 'Removed from Saved';
+
+  /// The shelf is capped, and the number is the ceiling in `firestore.rules`,
+  /// so the message says what to do about it instead of only refusing.
+  String savedStickerFull(int limit) => isArabic
+      ? 'ملصقاتك المحفوظة وصلت لحد ${number(limit)}. شيل واحد الأول.'
+      : 'Your Saved shelf holds $limit stickers. Remove one first.';
+
+  String get savedStickerFailed => isArabic
+      ? 'الحفظ فشل. جرّب تاني.'
+      : 'Could not save that sticker. Try again.';
+
+  /// The shelf could not be read, which is not the same thing as a save that
+  /// failed, so it gets its own line.
+  String get savedStickersLoadFailed => isArabic
+      ? 'الملصقات المحفوظة ما ظهرتش. جرّب تاني.'
+      : 'The Saved stickers did not load. Try again.';
+
+  String get savedStickersEmpty =>
+      isArabic ? 'مالكش ملصقات محفوظة' : 'No saved stickers yet';
+
+  /// How a bookmark is made, shown where the user would look for it.
+  String get savedStickersEmptyHint => isArabic
+      ? 'اضغط مطولاً على أي ملصق في المحادثة، وبعدين اختار حفظ الملصق'
+      : 'Press and hold any sticker in a chat, then choose Save sticker.';
+
+  String get savedStickerRemoveHint => isArabic
+      ? 'اضغط مطولاً على أي ملصق عشان يتشال من المحفوظة'
+      : 'Press and hold a sticker to take it off the shelf';
+
+  String get removeSavedSticker =>
+      isArabic ? 'شيل من المحفوظة' : 'Remove from Saved';
+
   // ---------- chats list: preview of a message without text ----------
   String get chatPreviewPhoto => isArabic ? 'صورة' : 'Photo';
   String get chatPreviewVideo => isArabic ? 'فيديو' : 'Video';
