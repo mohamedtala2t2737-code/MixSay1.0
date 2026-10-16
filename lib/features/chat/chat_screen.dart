@@ -60,6 +60,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _showStickerPicker = false;
   bool _otherTyping = false;
   bool _claimingTyping = false;
+
+  /// The repository the typing flag was written with, kept from the moment it
+  /// was set: leaving the chat has to clear that flag, and `dispose()` is not
+  /// allowed to read a provider any more.
+  ChatRepository? _typingWriter;
   ChatMessage? _replyingTo;
   Object? _messagesStreamError;
   QueryDocumentSnapshot<Map<String, dynamic>>? _oldestMessageDocument;
@@ -106,6 +111,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _messageSubscription?.cancel();
     _typingSubscription?.cancel();
     _typingDebounce?.cancel();
+    _releaseTyping();
     _messageController.dispose();
     _messageFocusNode.dispose();
     _scrollController.dispose();
@@ -463,9 +469,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void _showAttachmentFailure(Object error) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(_attachmentFailureMessage(error))),
-      );
+      ..showSnackBar(SnackBar(content: Text(_attachmentFailureMessage(error))));
   }
 
   /// Sends a sticker from a bundled pack: one document write, no upload, and
@@ -803,10 +807,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (_offline) return;
     if (!_claimingTyping) {
       _claimingTyping = true;
+      final repository = ref.read(chatRepositoryProvider);
+      _typingWriter = repository;
       try {
-        await ref
-            .read(chatRepositoryProvider)
-            .setTyping(widget.conversationId, true);
+        await repository.setTyping(widget.conversationId, true);
       } catch (error, stackTrace) {
         debugPrint('Unable to publish the typing state: $error');
         debugPrintStack(stackTrace: stackTrace);
@@ -824,15 +828,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   void _stopClaimingTyping() {
     _typingDebounce?.cancel();
+    _releaseTyping();
+  }
+
+  /// Puts my typing flag back to false, if this screen set it. The timer is
+  /// already cancelled by the time the widget is being torn down, so this part
+  /// stands on its own for `dispose()` to call.
+  void _releaseTyping() {
     if (!_claimingTyping) return;
     _claimingTyping = false;
+    final repository = _typingWriter;
+    if (repository == null) return;
     unawaited(
-      ref
-          .read(chatRepositoryProvider)
-          .setTyping(widget.conversationId, false)
-          .catchError((Object error) {
-            debugPrint('Unable to clear the typing state: $error');
-          }),
+      repository.setTyping(widget.conversationId, false).catchError((
+        Object error,
+      ) {
+        debugPrint('Unable to clear the typing state: $error');
+      }),
     );
   }
 

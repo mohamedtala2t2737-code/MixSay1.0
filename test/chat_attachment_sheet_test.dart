@@ -170,20 +170,18 @@ void main() {
     });
 
     testWidgets('tapping a row hands that kind back', (tester) async {
-      final chosen = await _openAndTap(
-        tester,
-        const [ChatAttachmentChoice.photo, ChatAttachmentChoice.document],
-        'Document',
-      );
+      final chosen = await _openAndTap(tester, const [
+        ChatAttachmentChoice.photo,
+        ChatAttachmentChoice.document,
+      ], 'Document');
 
       expect(chosen, ChatAttachmentChoice.document);
     });
 
     testWidgets('dismissing the sheet chooses nothing', (tester) async {
-      final chosen = await _openAndDismiss(
-        tester,
-        const [ChatAttachmentChoice.photo],
-      );
+      final chosen = await _openAndDismiss(tester, const [
+        ChatAttachmentChoice.photo,
+      ]);
       expect(chosen, isNull);
       expect(find.byType(BottomSheet), findsNothing);
     });
@@ -196,7 +194,10 @@ void main() {
           Builder(
             builder: (context) => FilledButton(
               onPressed: () async {
-                chosen = await showChatAttachmentSheet(context, options: const []);
+                chosen = await showChatAttachmentSheet(
+                  context,
+                  options: const [],
+                );
               },
               child: const Text('open'),
             ),
