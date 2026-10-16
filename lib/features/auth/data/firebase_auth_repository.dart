@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:social_chat/core/domain/app_user.dart';
 import 'package:social_chat/core/errors/app_exceptions.dart';
 import 'package:social_chat/core/notifications/chat_notification_service.dart';
+import 'package:social_chat/core/utils/age_group.dart';
 import 'package:social_chat/features/auth/domain/entities/auth_sign_up_outcome.dart';
 import 'package:social_chat/features/auth/domain/repositories/auth_repository.dart';
 import 'package:social_chat/features/auth/domain/username_policy.dart';
@@ -84,6 +85,10 @@ class FirebaseAuthRepository implements AuthRepository {
           'fullName': fullName.trim(),
           'avatarUrl': null,
           'bio': '',
+          'ageGroup': AgeGroup.of(
+            birthDate: birthDate,
+            now: DateTime.now(),
+          ).wire,
           'createdAt': FieldValue.serverTimestamp(),
         });
       });

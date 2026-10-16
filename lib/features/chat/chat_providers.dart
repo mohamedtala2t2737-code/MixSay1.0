@@ -5,7 +5,7 @@ import 'package:social_chat/features/chat/chat_repository.dart';
 import 'package:social_chat/features/chat/chat_saved_stickers.dart';
 
 final chatRepositoryProvider = Provider<ChatRepository>(
-  (ref) => ChatRepository(),
+  (ref) => ChatRepository(ageGroups: ref.watch(ageGroupServiceProvider)),
 );
 
 final savedStickerRepositoryProvider = Provider<SavedStickerRepository>(

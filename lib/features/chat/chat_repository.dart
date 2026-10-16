@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:social_chat/core/config/chat_features.dart';
+import 'package:social_chat/features/auth/data/age_group_service.dart';
 import 'package:social_chat/features/chat/chat_forward.dart';
 import 'package:social_chat/features/chat/chat_media.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
@@ -410,10 +411,12 @@ class ChatRepository {
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
     PendingQueueService? pendingQueue,
+    AgeGroupService? ageGroups,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _firestore = firestore ?? FirebaseFirestore.instance,
        _storage = storage ?? FirebaseStorage.instance,
-       _pendingQueue = pendingQueue ?? PendingQueueService.instance;
+       _pendingQueue = pendingQueue ?? PendingQueueService.instance,
+       _ageGroups = ageGroups ?? AgeGroupService();
 
   static const _messagePageSize = 30;
 
@@ -427,6 +430,7 @@ class ChatRepository {
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
   final PendingQueueService _pendingQueue;
+  final AgeGroupService _ageGroups;
   final _profileCache = <String, _CachedPublicProfile>{};
 
   String get _me {
@@ -443,8 +447,13 @@ class ChatRepository {
   Future<List<ChatUserPreview>> searchUsers(String query) async {
     final normalized = query.trim().toLowerCase();
     if (normalized.isEmpty) return const [];
+    // The server only ever returns profiles from the searcher's own age group,
+    // and the query says the same, so another group's name is never even read.
+    // Setting a missing group first is what lets an old account search at all.
+    final group = await _ageGroups.resolve(_me);
     final users = await _firestore
         .collection('publicProfiles')
+        .where('ageGroup', isEqualTo: group.wire)
         .orderBy('usernameLowercase')
         .startAt([normalized])
         .endAt(['$normalized\uf8ff'])

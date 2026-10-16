@@ -77,6 +77,20 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "publicProfiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ageGroup",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "usernameLowercase",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

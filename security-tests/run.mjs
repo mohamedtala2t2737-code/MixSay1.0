@@ -31,9 +31,12 @@ import {
   getDocs,
   increment,
   limit,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
+  startAt,
+  endAt,
   updateDoc,
   where,
   writeBatch,
@@ -70,8 +73,11 @@ const profile = (uid) => ({
   fullName: `Test ${uid}`,
   avatarUrl: null,
   bio: '',
+  ageGroup: 'adult',
   createdAt: Timestamp.now(),
 });
+
+// Everyone the earlier sections seed was born in 1990, so they are all adults.
 
 let passed = 0;
 const failures = [];
@@ -1136,24 +1142,16 @@ await check('a verified user can look up a profile', async () => {
   await assertSucceeds(getDoc(doc(db(MALLORY), 'publicProfiles', BOB)));
 });
 await check('profile listing needs the paging limit', async () => {
-  await assertSucceeds(
-    getDocs(
-      query(
-        collection(db(ALICE), 'publicProfiles'),
-        where('usernameLowercase', '>=', 'a'),
-        limit(20),
-      ),
-    ),
-  );
-  await assertFails(
-    getDocs(
-      query(
-        collection(db(ALICE), 'publicProfiles'),
-        where('usernameLowercase', '>=', 'a'),
-        limit(21),
-      ),
-    ),
-  );
+  // The group filter is what the list rule insists on; see the age groups.
+  const listed = (page) =>
+    query(
+      collection(db(ALICE), 'publicProfiles'),
+      where('ageGroup', '==', 'adult'),
+      where('usernameLowercase', '>=', 'a'),
+      limit(page),
+    );
+  await assertSucceeds(getDocs(listed(20)));
+  await assertFails(getDocs(listed(21)));
 });
 await check('a user can edit only their own display fields', async () => {
   await assertSucceeds(
@@ -1175,6 +1173,227 @@ await check('usernames are readable before sign-up but not listable', async () =
   );
   await assertFails(
     getDocs(query(collection(db(ALICE), 'usernames'), limit(10))),
+  );
+});
+
+// --------------------------------------------------------------- age groups
+const TEEN = 'tina';
+const TEEN_OTHER = 'timmy';
+const ADULT_OTHER = 'tabitha';
+const LEGACY = 'legacy';
+const TURNED_EIGHTEEN = 'eighteenit';
+const ALMOST_EIGHTEEN = 'notquite';
+const JUST_TURNED_THIRTEEN = 'thirteen';
+const TEEN_WANNABE = 'youngwant';
+const NO_GROUP = 'nogroup';
+const EXTRA_KEY = 'extrakey';
+
+/** A birth date `yearsAgo` years old, `shift` days younger than exactly that. */
+const born = (yearsAgo, shift = 0) => {
+  const today = new Date();
+  return Timestamp.fromDate(
+    new Date(
+      Date.UTC(
+        today.getUTCFullYear() - yearsAgo,
+        today.getUTCMonth(),
+        today.getUTCDate() + shift,
+      ),
+    ),
+  );
+};
+
+/** An account whose private date, username row and public profile agree. */
+async function account(uid, birthDate, group) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const store = context.firestore();
+    await setDoc(doc(store, 'users', uid), {
+      birthDate,
+      createdAt: Timestamp.now(),
+    });
+    await setDoc(doc(store, 'usernames', uid), { uid });
+    if (group === 'legacy') {
+      const row = profile(uid);
+      delete row.ageGroup;
+      await setDoc(doc(store, 'publicProfiles', uid), row);
+    } else if (group !== undefined) {
+      await setDoc(doc(store, 'publicProfiles', uid), {
+        ...profile(uid),
+        ageGroup: group,
+      });
+    }
+  });
+}
+
+/** The exact shape ChatRepository.searchUsers sends. */
+const search = (uid, group, prefix) =>
+  query(
+    collection(db(uid), 'publicProfiles'),
+    where('ageGroup', '==', group),
+    orderBy('usernameLowercase'),
+    startAt(prefix),
+    endAt(`${prefix}\uf8ff`),
+    limit(20),
+  );
+
+const found = (snapshot) => snapshot.docs.map((row) => row.id).sort().join(',');
+
+function onlyRows(actual, expected, what) {
+  if (actual !== expected) {
+    throw new Error(`${what}: found [${actual}], expected [${expected}]`);
+  }
+}
+
+await account(TEEN, born(15), 'teen');
+await account(TEEN_OTHER, born(16), 'teen');
+await account(ADULT_OTHER, born(30), 'adult');
+await account(LEGACY, born(40), 'legacy');
+await account(TURNED_EIGHTEEN, born(18), 'teen');
+await account(ALMOST_EIGHTEEN, born(18, 1), undefined);
+await account(JUST_TURNED_THIRTEEN, born(13), undefined);
+await account(TEEN_WANNABE, born(14), undefined);
+await account(NO_GROUP, born(15), undefined);
+await account(EXTRA_KEY, born(15), undefined);
+
+const teenRows = [TEEN, TEEN_OTHER, TURNED_EIGHTEEN].sort().join(',');
+
+await check('an adult searching by name range finds only adults', async () => {
+  const rows = await assertSucceeds(getDocs(search(ALICE, 'adult', 't')));
+  onlyRows(found(rows), ADULT_OTHER, 'adult search');
+});
+await check('a teen searching the same name range finds only teens', async () => {
+  const rows = await assertSucceeds(getDocs(search(TEEN, 'teen', 't')));
+  onlyRows(found(rows), [TEEN, TEEN_OTHER].sort().join(','), 'teen search');
+});
+await check('a teen search over every name finds teens and no adult', async () => {
+  const rows = await assertSucceeds(
+    getDocs(
+      query(
+        collection(db(TEEN), 'publicProfiles'),
+        where('ageGroup', '==', 'teen'),
+        where('usernameLowercase', '>=', 'a'),
+        limit(20),
+      ),
+    ),
+  );
+  onlyRows(found(rows), teenRows, 'a teen range over every name');
+});
+await check('an adult who asks the server for teens is refused the query', async () => {
+  await assertFails(getDocs(search(ALICE, 'teen', 't')));
+});
+await check('a teen who asks for adults is refused the query', async () => {
+  await assertFails(getDocs(search(TEEN, 'adult', 'a')));
+});
+await check('a search that never names a group is refused', async () => {
+  await assertFails(
+    getDocs(
+      query(
+        collection(db(TEEN), 'publicProfiles'),
+        where('usernameLowercase', '>=', 'a'),
+        limit(20),
+      ),
+    ),
+  );
+});
+await check('a searcher whose own profile has no group searches nobody', async () => {
+  await assertFails(getDocs(search(LEGACY, 'adult', 'a')));
+});
+await check('a profile with no group is never found in a search', async () => {
+  const rows = await assertSucceeds(getDocs(search(ALICE, 'adult', 'le')));
+  onlyRows(found(rows), '', 'the legacy profile in an adult search');
+});
+await check('the same profile still opens by id, so chats and feeds work', async () => {
+  await assertSucceeds(getDoc(doc(db(TEEN), 'publicProfiles', LEGACY)));
+});
+await check('a teen cannot put themselves in the adult group', async () => {
+  await assertFails(
+    updateDoc(doc(db(TEEN), 'publicProfiles', TEEN), { ageGroup: 'adult' }),
+  );
+});
+await check('a teen restating their own group is not punished for it', async () => {
+  await assertSucceeds(
+    updateDoc(doc(db(TEEN), 'publicProfiles', TEEN), {
+      ageGroup: 'teen',
+      bio: 'still a teen',
+    }),
+  );
+});
+await check('nobody can buy a different group by editing their birth date', async () => {
+  await assertFails(
+    updateDoc(doc(db(TEEN), 'users', TEEN), { birthDate: born(40) }),
+  );
+});
+await check('a new profile states the group its birth date gives', async () => {
+  await assertSucceeds(
+    setDoc(doc(db(JUST_TURNED_THIRTEEN), 'publicProfiles', JUST_TURNED_THIRTEEN), {
+      ...profile(JUST_TURNED_THIRTEEN),
+      ageGroup: 'teen',
+    }),
+  );
+});
+await check('a thirteen-year-old cannot create an adult profile', async () => {
+  await assertFails(
+    setDoc(doc(db(TEEN_WANNABE), 'publicProfiles', TEEN_WANNABE), {
+      ...profile(TEEN_WANNABE),
+      ageGroup: 'adult',
+    }),
+  );
+});
+await check('a day short of eighteen is still a teen', async () => {
+  await assertFails(
+    setDoc(doc(db(ALMOST_EIGHTEEN), 'publicProfiles', ALMOST_EIGHTEEN), {
+      ...profile(ALMOST_EIGHTEEN),
+      ageGroup: 'adult',
+    }),
+  );
+  await assertSucceeds(
+    setDoc(doc(db(ALMOST_EIGHTEEN), 'publicProfiles', ALMOST_EIGHTEEN), {
+      ...profile(ALMOST_EIGHTEEN),
+      ageGroup: 'teen',
+    }),
+  );
+});
+await check('a profile cannot be created without any group', async () => {
+  const row = profile(NO_GROUP);
+  delete row.ageGroup;
+  await assertFails(
+    setDoc(doc(db(NO_GROUP), 'publicProfiles', NO_GROUP), row),
+  );
+});
+await check('a profile cannot be created with an unknown key', async () => {
+  await assertFails(
+    setDoc(doc(db(EXTRA_KEY), 'publicProfiles', EXTRA_KEY), {
+      ...profile(EXTRA_KEY),
+      ageGroup: 'teen',
+      country: 'EG',
+    }),
+  );
+  await assertFails(
+    updateDoc(doc(db(TEEN), 'publicProfiles', TEEN), {
+      ageGroup: 'teen',
+      country: 'EG',
+    }),
+  );
+});
+await check('the eighteenth birthday heals a profile left as a teen', async () => {
+  await assertSucceeds(
+    updateDoc(doc(db(TURNED_EIGHTEEN), 'publicProfiles', TURNED_EIGHTEEN), {
+      ageGroup: 'adult',
+    }),
+  );
+});
+await check('a legacy owner can set the group they were always in', async () => {
+  await assertSucceeds(
+    updateDoc(doc(db(LEGACY), 'publicProfiles', LEGACY), { bio: 'healing' }),
+  );
+  await assertSucceeds(
+    updateDoc(doc(db(LEGACY), 'publicProfiles', LEGACY), {
+      ageGroup: 'adult',
+    }),
+  );
+  await assertFails(
+    updateDoc(doc(db(LEGACY), 'publicProfiles', LEGACY), {
+      ageGroup: 'teen',
+    }),
   );
 });
 

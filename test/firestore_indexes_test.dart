@@ -80,6 +80,30 @@ void main() {
     );
   });
 
+  test('the age-group search has a matching profile index', () {
+    // ChatRepository.searchUsers filters the searcher's group with an equality
+    // and ranges the username, so the equality field has to lead one index.
+    expect(
+      indexFor('publicProfiles', [
+        'ageGroup ASCENDING',
+        'usernameLowercase ASCENDING',
+      ]),
+      isNotNull,
+    );
+  });
+
+  test('no index waits on a profile filter the app does not have', () {
+    // Country and gender filtering would each need their own composite index.
+    // The search has no such filter, so nothing may declare one for them.
+    for (final index in declaredIndexes.cast<Map<String, dynamic>>()) {
+      final paths = (index['fields'] as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .map((field) => field['fieldPath']);
+      expect(paths, isNot(contains('country')));
+      expect(paths, isNot(contains('gender')));
+    }
+  });
+
   test('every index is a collection-scope one', () {
     for (final index in declaredIndexes.cast<Map<String, dynamic>>()) {
       expect(index['collectionGroup'], isNotEmpty);
@@ -99,16 +123,17 @@ void main() {
     expect(body, contains('startAfterDocument(after)'));
     expect(body, contains('limit(limit)'));
     // The page size is what the list rule allows, and nothing bigger.
-    expect(File('firestore.rules').readAsStringSync(),
-        contains('request.query.limit <= 30'));
+    expect(
+      File('firestore.rules').readAsStringSync(),
+      contains('request.query.limit <= 30'),
+    );
     expect(source, contains('static const postPageSize = 30'));
     expect(body, contains('int limit = postPageSize'));
   });
 
   test('the profile tabs never filter a mixed page on the client', () {
-    final screen = File(
-      'lib/features/profile/presentation/profile_screen.dart',
-    ).readAsStringSync();
+    final screen = File('lib/features/profile/presentation/profile_screen.dart')
+        .readAsStringSync();
 
     // The old wall read one mixed list and picked the clips out of it, which
     // showed too few tiles and broke the cursor.

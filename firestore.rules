@@ -6,14 +6,14 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAtLeastThirteen(birthDate) {
+    function hasReachedAge(birthDate, age) {
       // Rules validate the submitted calendar date; they cannot verify identity.
       let today = request.time.date();
       let birthday = birthDate.date();
       let years = today.year() - birthday.year();
-      return years > 13
+      return years > age
         || (
-          years == 13
+          years == age
           && (
             birthday.month() < today.month()
             || (
@@ -22,6 +22,16 @@ service cloud.firestore {
             )
           )
         );
+    }
+
+    function isAtLeastThirteen(birthDate) {
+      return hasReachedAge(birthDate, 13);
+    }
+
+    // The two groups the app knows. Anyone under thirteen is filed with teens,
+    // so a damaged date can never widen an adult's reach.
+    function ageGroupOf(birthDate) {
+      return hasReachedAge(birthDate, 18) ? 'adult' : 'teen';
     }
 
     function hasEligibleBirthDate(birthDate) {
@@ -48,6 +58,30 @@ service cloud.firestore {
       let userPath = /databases/$(database)/documents/users/$(userId);
       return existsAfter(userPath)
         && hasEligibleBirthDate(getAfter(userPath).data.birthDate);
+    }
+
+    // The group this user's private birth date puts them in, as of the request.
+    // An empty result never matches a stored group, so it denies.
+    function computedAgeGroup(userId) {
+      let userPath = /databases/$(database)/documents/users/$(userId);
+      let birth = existsAfter(userPath)
+        ? getAfter(userPath).data.birthDate
+        : null;
+      return birth is timestamp ? ageGroupOf(birth) : '';
+    }
+
+    // The signed-in user's own group, read from their own public profile. A
+    // profile that has no group yet is deliberately left empty: its owner may
+    // read a single profile by id, but discovers nobody until the app has
+    // written the field.
+    function ownAgeGroup() {
+      let profilePath = /databases/$(database)/documents/publicProfiles/$(
+        request.auth.uid
+      );
+      let group = signedIn() && exists(profilePath)
+        ? get(profilePath).data.get('ageGroup', '')
+        : '';
+      return group == 'teen' || group == 'adult' ? group : '';
     }
 
     function isConversationMember(conversationId) {
@@ -373,7 +407,17 @@ service cloud.firestore {
     match /publicProfiles/{userId} {
       allow get: if verifiedUser();
       // The app always searches with limit(20). This blocks bulk scraping.
-      allow list: if verifiedUser() && request.query.limit <= 20;
+      //
+      // The group is enforced document by document: a profile only shows
+      // itself to a searcher from the same group, and the server refuses a
+      // listing it cannot prove will stay inside that group. So a search that
+      // does not filter on the requester's own age group is refused outright,
+      // an adult filtering for teens is refused, and nobody can pull the whole
+      // directory. The group itself is never the owner's choice (below).
+      allow list: if verifiedUser()
+        && request.query.limit <= 20
+        && ownAgeGroup() != ''
+        && resource.data.get('ageGroup', '') == ownAgeGroup();
       allow create: if signedIn()
         && request.auth.uid == userId
         && eligibleUserAfterWrite(userId)
@@ -384,9 +428,14 @@ service cloud.firestore {
           'fullName',
           'avatarUrl',
           'bio',
+          'ageGroup',
           'createdAt'
         ])
         && request.resource.data.id == userId
+        // Not a choice: the private birth date written in the same commit
+        // decides it, and nobody without that date gets a profile.
+        && request.resource.data.get('ageGroup', '')
+          == computedAgeGroup(userId)
         && request.resource.data.username is string
         && request.resource.data.username.matches(
           '^[a-z0-9.]{4,24}$'
@@ -419,8 +468,16 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'fullName',
           'avatarUrl',
-          'bio'
+          'bio',
+          'ageGroup'
         ])
+        // The app may restate the group, never change it: an eighteenth
+        // birthday and a profile that predates the field both heal this way.
+        && (
+          request.resource.data.get('ageGroup', '')
+            == resource.data.get('ageGroup', '')
+          || request.resource.data.get('ageGroup', '') == computedAgeGroup(userId)
+        )
         && request.resource.data.id == resource.data.id
         && request.resource.data.username == resource.data.username
         && request.resource.data.usernameLowercase
