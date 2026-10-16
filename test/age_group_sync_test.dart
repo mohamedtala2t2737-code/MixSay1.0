@@ -153,6 +153,29 @@ void main() {
       );
       expect(profiles, contains('allow get: if verifiedUser();'));
     });
+
+    test('a brand new thread needs both members in one group', () {
+      final rules = source('firestore.rules');
+      final gate = rules.substring(
+        rules.indexOf('function membersShareAgeGroup'),
+      );
+      expect(gate, contains('computedAgeGroup(members[0])'));
+      expect(gate, contains("first != ''"));
+      expect(gate, contains('computedAgeGroup(members[1])'));
+
+      final conversations = rules.substring(
+        rules.indexOf('match /conversations/{conversationId}'),
+      );
+      final create = conversations.substring(
+        0,
+        conversations.indexOf('allow update'),
+      );
+      expect(create, contains('membersShareAgeGroup(request.resource.data'));
+      // Only creation is gated, so a thread that predates the rule keeps
+      // working for both sides.
+      expect(conversations.substring(conversations.indexOf('allow update')),
+          isNot(contains('membersShareAgeGroup')));
+    });
   });
 
   group('nothing about age reaches the screen', () {

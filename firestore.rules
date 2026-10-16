@@ -96,6 +96,16 @@ service cloud.firestore {
       return members[0] == request.auth.uid ? members[1] : members[0];
     }
 
+    // A brand new thread is only for two people the server puts in the same
+    // group. Each group is read from that member's private birth date rather
+    // than a profile field, so an account whose profile has not caught up yet
+    // is still placed correctly and nobody can be reached by guessing an id.
+    // Threads that already exist are not re-checked: only creation is gated.
+    function membersShareAgeGroup(members) {
+      let first = computedAgeGroup(members[0]);
+      return first != '' && first == computedAgeGroup(members[1]);
+    }
+
     // ------------------------------------------------------------ chat media
     // Kept in step with ChatMessageType and ChatFeatures in Dart: a message the
     // server does not recognise is refused on write, never on read.
@@ -553,6 +563,7 @@ service cloud.firestore {
         && request.resource.data.members.size() == 2
         && request.resource.data.members[0] < request.resource.data.members[1]
         && request.auth.uid in request.resource.data.members
+        && membersShareAgeGroup(request.resource.data.members)
         // Same id formula as ChatRepository.getOrCreateConversation.
         && conversationId == string(request.resource.data.members[0].size())
           + '_' + request.resource.data.members[0]

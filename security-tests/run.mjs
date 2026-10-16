@@ -1187,6 +1187,7 @@ const JUST_TURNED_THIRTEEN = 'thirteen';
 const TEEN_WANNABE = 'youngwant';
 const NO_GROUP = 'nogroup';
 const EXTRA_KEY = 'extrakey';
+const FAKE_GROUP = 'fakegroup';
 
 /** A birth date `yearsAgo` years old, `shift` days younger than exactly that. */
 const born = (yearsAgo, shift = 0) => {
@@ -1253,6 +1254,7 @@ await account(JUST_TURNED_THIRTEEN, born(13), undefined);
 await account(TEEN_WANNABE, born(14), undefined);
 await account(NO_GROUP, born(15), undefined);
 await account(EXTRA_KEY, born(15), undefined);
+await account(FAKE_GROUP, born(14), 'adult');
 
 const teenRows = [TEEN, TEEN_OTHER, TURNED_EIGHTEEN].sort().join(',');
 
@@ -1393,6 +1395,84 @@ await check('a legacy owner can set the group they were always in', async () => 
   await assertFails(
     updateDoc(doc(db(LEGACY), 'publicProfiles', LEGACY), {
       ageGroup: 'teen',
+    }),
+  );
+});
+
+// ---- opening threads across the groups
+// These use their own accounts because the checks above edit alice's display
+// name, and a thread copies that name out of the profile row.
+const ADULT_CALLER = 'carla';
+const UNHEALED = 'unhealed';
+await account(ADULT_CALLER, born(28), 'adult');
+await account(UNHEALED, born(25), 'legacy');
+
+/** The exact payload ChatRepository.getOrCreateConversation writes. */
+const thread = (a, b) => ({
+  members: [a, b].sort(),
+  participants: {
+    [a]: { username: a, fullName: `Test ${a}`, avatarUrl: null },
+    [b]: { username: b, fullName: `Test ${b}`, avatarUrl: null },
+  },
+  lastMessageContent: null,
+  lastMessageAt: null,
+  unreadCounts: { [a]: 0, [b]: 0 },
+  createdAt: Timestamp.now(),
+});
+
+const openThread = (as, other) =>
+  setDoc(doc(db(as), 'conversations', conversationId(as, other)), thread(as, other));
+
+await check('two teens can open a thread with each other', async () => {
+  await assertSucceeds(openThread(TEEN, TEEN_OTHER));
+});
+await check('two adults can open a thread with each other', async () => {
+  await assertSucceeds(openThread(ADULT_CALLER, ADULT_OTHER));
+});
+await check('a teen cannot open a thread with an adult', async () => {
+  await assertFails(openThread(TEEN, ADULT_OTHER));
+});
+await check('an adult cannot open a thread with a teen', async () => {
+  await assertFails(openThread(ADULT_CALLER, TEEN));
+});
+await check('a profile with no group written yet is placed by its date', async () => {
+  // unhealed has no ageGroup key at all and its date makes it an adult, so the
+  // adult caller still gets the thread.
+  await assertSucceeds(openThread(ADULT_CALLER, UNHEALED));
+});
+await check('a profile that claims the other group is still its birth date', async () => {
+  // fakegroup's stored field says adult while its private date says teen, so an
+  // adult opening a thread is refused by the date, not by what the row claims.
+  await assertFails(openThread(ADULT_CALLER, FAKE_GROUP));
+});
+await check('a profile still marked teen on its eighteenth reads as an adult', async () => {
+  // eighteenit turned eighteen today and its row still says teen: an adult may
+  // reach it, and a teen may not.
+  await assertSucceeds(openThread(ADULT_CALLER, TURNED_EIGHTEEN));
+  await assertFails(openThread(TEEN, TURNED_EIGHTEEN));
+});
+await check('a thread opened before the rule still works both ways', async () => {
+  // The gate is on creation only, so an existing adult-teen thread keeps
+  // reading and receiving instead of silently going dead.
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const store = context.firestore();
+    await setDoc(doc(store, 'conversations', conversationId(ADULT_CALLER, TEEN)), {
+      ...thread(ADULT_CALLER, TEEN),
+      lastMessageContent: 'already here',
+      lastMessageAt: Timestamp.now(),
+    });
+  });
+  const id = conversationId(ADULT_CALLER, TEEN);
+  await assertSucceeds(getDoc(doc(db(TEEN), 'conversations', id)));
+  await assertSucceeds(
+    setDoc(doc(db(TEEN), 'conversations', id, 'messages', 'afterTheRule'), {
+      senderId: TEEN,
+      recipientId: ADULT_CALLER,
+      clientId: 'afterTheRule',
+      content: 'still allowed',
+      mediaUrl: null,
+      createdAt: Timestamp.now(),
+      status: 'sent',
     }),
   );
 });
