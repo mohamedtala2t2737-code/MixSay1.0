@@ -6,14 +6,14 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAtLeastThirteen(birthDate) {
+    function hasReachedAge(birthDate, age) {
       // Rules validate the submitted calendar date; they cannot verify identity.
       let today = request.time.date();
       let birthday = birthDate.date();
       let years = today.year() - birthday.year();
-      return years > 13
+      return years > age
         || (
-          years == 13
+          years == age
           && (
             birthday.month() < today.month()
             || (
@@ -22,6 +22,16 @@ service cloud.firestore {
             )
           )
         );
+    }
+
+    function isAtLeastThirteen(birthDate) {
+      return hasReachedAge(birthDate, 13);
+    }
+
+    // The two groups the app knows. Anyone under thirteen is filed with teens,
+    // so a damaged date can never widen an adult's reach.
+    function ageGroupOf(birthDate) {
+      return hasReachedAge(birthDate, 18) ? 'adult' : 'teen';
     }
 
     function hasEligibleBirthDate(birthDate) {
@@ -50,6 +60,30 @@ service cloud.firestore {
         && hasEligibleBirthDate(getAfter(userPath).data.birthDate);
     }
 
+    // The group this user's private birth date puts them in, as of the request.
+    // An empty result never matches a stored group, so it denies.
+    function computedAgeGroup(userId) {
+      let userPath = /databases/$(database)/documents/users/$(userId);
+      return existsAfter(userPath)
+        && getAfter(userPath).data.birthDate is timestamp
+        ? ageGroupOf(getAfter(userPath).data.birthDate)
+        : '';
+    }
+
+    // The signed-in user's own group, read from their own public profile. A
+    // profile that has no group yet is deliberately left empty: its owner may
+    // read a single profile by id, but discovers nobody until the app has
+    // written the field.
+    function ownAgeGroup() {
+      let profilePath = /databases/$(database)/documents/publicProfiles/$(
+        request.auth.uid
+      );
+      let group = signedIn() && exists(profilePath)
+        ? get(profilePath).data.get('ageGroup', '')
+        : '';
+      return group == 'teen' || group == 'adult' ? group : '';
+    }
+
     function isConversationMember(conversationId) {
       return verifiedUser()
         && request.auth.uid in get(
@@ -60,6 +94,205 @@ service cloud.firestore {
     // The other participant of a two-member conversation.
     function otherMember(members) {
       return members[0] == request.auth.uid ? members[1] : members[0];
+    }
+
+    // A brand new thread is only for two people the server puts in the same
+    // group. Each group is read from that member's private birth date rather
+    // than a profile field, so an account whose profile has not caught up yet
+    // is still placed correctly and nobody can be reached by guessing an id.
+    // Threads that already exist are not re-checked: only creation is gated.
+    function membersShareAgeGroup(members) {
+      let first = computedAgeGroup(members[0]);
+      return first != '' && first == computedAgeGroup(members[1]);
+    }
+
+    // ------------------------------------------------------------ chat media
+    // Kept in step with ChatMessageType and ChatFeatures in Dart: a message the
+    // server does not recognise is refused on write, never on read.
+    function chatMessageTypes() {
+      return ['text', 'image', 'video', 'file', 'voice', 'sticker', 'gif'];
+    }
+
+    // Byte ceilings per type. The app refuses an oversized file before it
+    // uploads; this is the backstop for anything that reaches the server.
+    function chatMediaSizeIsAllowed(type, size) {
+      return type == 'image'
+        ? size < 5 * 1024 * 1024
+        : type == 'video'
+          ? size < 25 * 1024 * 1024
+          : type == 'file'
+            ? size < 10 * 1024 * 1024
+            : type == 'voice'
+              ? size < 5 * 1024 * 1024
+              : true;
+    }
+
+    // The Storage layout for chat uploads: chats/{conversationId}/{senderId}/file
+    // Nobody may point a message at another pair's folder or another sender's.
+    function chatUploadPathIsMine(media, conversationId) {
+      let parts = media.split('/');
+      return parts.size() == 4
+        && parts[0] == 'chats'
+        && parts[1] == conversationId
+        && parts[2] == request.auth.uid;
+    }
+
+    function chatMessageCarriesWhatItClaims(message, type, conversationId) {
+      let media = message.mediaUrl;
+      return type == 'text'
+        ? media == null && message.content.size() > 0
+        : type == 'sticker'
+          ? (
+            media == null
+            && message.get('stickerId', null) is string
+            || (
+              media is string
+              && chatUploadPathIsMine(media, conversationId)
+            )
+          )
+          : type == 'gif'
+            ? media is string && media.matches('https://.*')
+            : media is string
+              && chatUploadPathIsMine(media, conversationId);
+    }
+
+    function chatReplyIsValid(reply) {
+      return reply.keys().hasOnly(['messageId', 'senderId', 'content', 'type'])
+        && reply.keys().hasAll(['messageId', 'senderId', 'content', 'type'])
+        && reply.messageId is string
+        && reply.messageId.size() <= 60
+        && reply.senderId is string
+        && reply.senderId.size() <= 60
+        && reply.content is string
+        && reply.content.size() <= 300
+        && reply.type in chatMessageTypes();
+    }
+
+    // A plain text message writes exactly the seven fields the app has always
+    // written, so sending keeps working against rules that are already
+    // deployed. Every field here beyond those seven belongs to a feature that
+    // needs this version published first.
+    function chatMessageFields() {
+      return [
+        'senderId',
+        'recipientId',
+        'clientId',
+        'content',
+        'mediaUrl',
+        'createdAt',
+        'status',
+        'type',
+        'thumbUrl',
+        'fileName',
+        'fileSize',
+        'durationMs',
+        'stickerId',
+        'replyTo',
+        'deletedFor',
+        'deletedForEveryone',
+        'forwarded'
+      ];
+    }
+
+    function chatOptionalFieldsAreValid(message, type, conversationId) {
+      let fileSize = message.get('fileSize', null);
+      let fileName = message.get('fileName', null);
+      let durationMs = message.get('durationMs', null);
+      let thumbUrl = message.get('thumbUrl', null);
+      let stickerId = message.get('stickerId', null);
+      return (
+        fileSize == null
+        || (
+          fileSize is int
+          && fileSize >= 0
+          && chatMediaSizeIsAllowed(type, fileSize)
+        )
+      )
+      && (
+        fileName == null
+        || (
+          fileName is string
+          && fileName.size() > 0
+          && fileName.size() <= 255
+        )
+      )
+      && (
+        durationMs == null
+        || (durationMs is int && durationMs >= 0 && durationMs <= 600000)
+      )
+      && (
+        thumbUrl == null
+        || (
+          thumbUrl is string
+          && (
+            thumbUrl.matches('https://.*')
+            || chatUploadPathIsMine(thumbUrl, conversationId)
+          )
+        )
+      )
+      && (
+        stickerId == null
+        || (
+          stickerId is string
+          && stickerId.size() > 0
+          && stickerId.size() <= 120
+        )
+      );
+    }
+
+    function chatMessageIsValidOnCreate(message, conversationId) {
+      let type = message.get('type', 'text');
+      let replyTo = message.get('replyTo', null);
+      let deletedFor = message.get('deletedFor', null);
+      let deletedForEveryone = message.get('deletedForEveryone', null);
+      let forwarded = message.get('forwarded', null);
+      return message.content is string
+        && message.content.size() <= 4000
+        && (message.mediaUrl is string || message.mediaUrl == null)
+        && type in chatMessageTypes()
+        && chatMessageCarriesWhatItClaims(message, type, conversationId)
+        && chatOptionalFieldsAreValid(message, type, conversationId)
+        && (replyTo == null || chatReplyIsValid(replyTo))
+        // A brand new message is visible to both sides. Hiding is an update, so
+        // a sender can never quietly deliver something the receiver cannot see.
+        && deletedFor == null
+        && (deletedForEveryone == null || deletedForEveryone == false)
+        // The forwarded label is a plain flag a copy arrives with. It buys
+        // nothing: chatMessageCarriesWhatItClaims above still refuses a message
+        // that points at another chat's file, so claiming to be a copy cannot
+        // smuggle in someone else's media path. Only a create can set it — the
+        // update branches never list it among the keys they accept.
+        && (forwarded == null || forwarded is bool);
+    }
+
+    // sent -> delivered -> read, and never back.
+    function chatStatusMovesForward(before, after) {
+      return (
+        (before == 'sent' && (after == 'delivered' || after == 'read'))
+        || (before == 'delivered' && after == 'read')
+      );
+    }
+
+    // A hide-from-me write may add exactly the writer and never anybody else,
+    // it may never remove a hide that is already there, and it may not be a
+    // no-op (re-hiding a message the writer has already hidden changes nothing,
+    // so ChatRepository never sends it and the rules refuse it). Set equality
+    // with `==` is not available here, so the change is described by its counts.
+    function chatDeletedForAddsOnlyMe(before, after) {
+      // Rules functions have no early return, so a value that is not a list is
+      // swapped for an empty one and rejected by the type test below.
+      let beforeList = (before is list) ? before : [];
+      let afterList = (after is list) ? after : [];
+      let added = afterList.toSet().difference(beforeList.toSet());
+      let removed = beforeList.toSet().difference(afterList.toSet());
+      // Sets have no `has()` here, so the writer is located with list
+      // membership: one new entry that is not yet present must be the writer.
+      return before is list
+        && after is list
+        && removed.size() == 0
+        && added.size() == 1
+        && request.auth.uid in after
+        && !(request.auth.uid in before);
     }
 
     // ---------------------------------------------------------------- users
@@ -88,13 +321,113 @@ service cloud.firestore {
           && request.resource.data.updatedAt is timestamp;
         allow delete: if signedIn() && request.auth.uid == userId;
       }
+
+      // ------------------------------------------------------------- follows
+      // A follow is two mirrored rows written by the follower in one batch:
+      // `users/{target}/followers/{me}` and `users/{me}/following/{target}`.
+      // Mirroring keeps both directions a plain subcollection read instead of a
+      // `where` query across a global collection, which would need a composite
+      // index and would let anyone stream somebody else's whole graph.
+      // The row id is the person the row is ABOUT, so the key and the `userId`
+      // field have to agree and nobody can write a row for anybody but
+      // themselves.
+      match /followers/{followerId} {
+        allow create: if verifiedUser()
+          && request.auth.uid == followerId
+          && request.auth.uid != userId
+          && request.resource.data.keys().hasOnly(['userId', 'followedAt'])
+          && request.resource.data.userId == followerId
+          && request.resource.data.followedAt == request.time;
+        // The graph is public the way the feed is: any verified user may see
+        // who follows whom. Reading rows one by one is unlimited, listing them
+        // is capped at FollowRepository.countProbe, which is how the app counts
+        // followers without a count() aggregate (an aggregate carries no limit,
+        // so it cannot be bounded by `request.query.limit`).
+        allow get: if verifiedUser();
+        allow list: if verifiedUser() && request.query.limit <= 201;
+        // Only the follower can end a follow; the author of a profile cannot
+        // erase someone's own row.
+        allow delete: if verifiedUser() && request.auth.uid == followerId;
+        allow update: if false;
+      }
+
+      match /following/{targetId} {
+        allow create: if verifiedUser()
+          && request.auth.uid == userId
+          && request.auth.uid != targetId
+          && request.resource.data.keys().hasOnly(['userId', 'followedAt'])
+          && request.resource.data.userId == targetId
+          && request.resource.data.followedAt == request.time;
+        allow get: if verifiedUser();
+        allow list: if verifiedUser() && request.query.limit <= 201;
+        allow delete: if verifiedUser() && request.auth.uid == userId;
+        allow update: if false;
+      }
+
+      // ----------------------------------------------------- saved stickers
+      // A save is a bookmark, not a copy: the row holds which pack and which
+      // sticker, and the picture still comes out of the assets this build
+      // ships. So a row can name a sticker that does not exist, but it can
+      // never carry bytes, a URL, or a path into somebody's storage.
+      // The id is both halves joined with `_`, and neither half may hold `_`,
+      // so one sticker has exactly one row no matter how often it is tapped,
+      // and no pair of halves can be re-split into a different savedId.
+      // Neither half is free-form either: the charset is the one
+      // ChatStickerPack's ids are written with, so a made-up document cannot
+      // look like a pack the app knows.
+      match /savedStickers/{savedId} {
+        allow get: if signedIn() && request.auth.uid == userId;
+        // The app reads one page of 200 at a time, which is also its ceiling:
+        // rules cannot count a collection, so SavedStickerRepository.count()
+        // probes with limit(200) and refuses a 201st save. An aggregate carries
+        // no limit, so count() could not be bounded here even if it existed.
+        // Capping the list is what stops a stranger's tokenless read from
+        // dumping every bookmark.
+        allow list: if signedIn()
+          && request.auth.uid == userId
+          && request.query.limit <= 200;
+        allow create: if signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(
+            ['packId', 'sticker', 'savedAt']
+          )
+          && request.resource.data.packId.matches('^[a-z0-9-]{1,40}$')
+          && request.resource.data.sticker.matches('^[a-z0-9-]{1,40}$')
+          && savedId ==
+            request.resource.data.packId
+            + '_'
+            + request.resource.data.sticker
+          && request.resource.data.savedAt == request.time;
+        // Re-saving a sticker the user already has is a no-op the row id makes
+        // impossible to duplicate, so the only thing a second tap may change is
+        // the timestamp. Without this the row would be an update, `update: if
+        // false` would refuse it, and the app would report an error for a save
+        // that had already worked.
+        allow update: if signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['savedAt']
+          )
+          && request.resource.data.savedAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == userId;
+      }
     }
 
     //------------------------------------------------------- publicProfiles
     match /publicProfiles/{userId} {
       allow get: if verifiedUser();
       // The app always searches with limit(20). This blocks bulk scraping.
-      allow list: if verifiedUser() && request.query.limit <= 20;
+      //
+      // The group is enforced document by document: a profile only shows
+      // itself to a searcher from the same group, and the server refuses a
+      // listing it cannot prove will stay inside that group. So a search that
+      // does not filter on the requester's own age group is refused outright,
+      // an adult filtering for teens is refused, and nobody can pull the whole
+      // directory. The group itself is never the owner's choice (below).
+      allow list: if verifiedUser()
+        && request.query.limit <= 20
+        && ownAgeGroup() != ''
+        && resource.data.get('ageGroup', '') == ownAgeGroup();
       allow create: if signedIn()
         && request.auth.uid == userId
         && eligibleUserAfterWrite(userId)
@@ -105,9 +438,14 @@ service cloud.firestore {
           'fullName',
           'avatarUrl',
           'bio',
+          'ageGroup',
           'createdAt'
         ])
         && request.resource.data.id == userId
+        // Not a choice: the private birth date written in the same commit
+        // decides it, and nobody without that date gets a profile.
+        && request.resource.data.get('ageGroup', '')
+          == computedAgeGroup(userId)
         && request.resource.data.username is string
         && request.resource.data.username.matches(
           '^[a-z0-9.]{4,24}$'
@@ -140,8 +478,16 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'fullName',
           'avatarUrl',
-          'bio'
+          'bio',
+          'ageGroup'
         ])
+        // The app may restate the group, never change it: an eighteenth
+        // birthday and a profile that predates the field both heal this way.
+        && (
+          request.resource.data.get('ageGroup', '')
+            == resource.data.get('ageGroup', '')
+          || request.resource.data.get('ageGroup', '') == computedAgeGroup(userId)
+        )
         && request.resource.data.id == resource.data.id
         && request.resource.data.username == resource.data.username
         && request.resource.data.usernameLowercase
@@ -208,18 +554,36 @@ service cloud.firestore {
           'lastMessageContent',
           'lastMessageAt',
           'unreadCounts',
-          'createdAt'
+          'createdAt',
+          'lastMessageType',
+          'lastSenderId',
+          'typing'
         ])
         && request.resource.data.members is list
         && request.resource.data.members.size() == 2
         && request.resource.data.members[0] < request.resource.data.members[1]
         && request.auth.uid in request.resource.data.members
+        && membersShareAgeGroup(request.resource.data.members)
         // Same id formula as ChatRepository.getOrCreateConversation.
         && conversationId == string(request.resource.data.members[0].size())
           + '_' + request.resource.data.members[0]
           + request.resource.data.members[1]
         && request.resource.data.lastMessageContent == null
         && request.resource.data.lastMessageAt == null
+        && request.resource.data.get('lastMessageType', null) == null
+        && request.resource.data.get('lastSenderId', null) == null
+        // A brand new thread has nobody typing. The map appears with the first
+        // typing write and is then kept to one boolean per member.
+        && (
+          request.resource.data.get('typing', null) == null
+          || (
+            request.resource.data.typing is map
+            && request.resource.data.typing.keys().hasOnly(
+              request.resource.data.members
+            )
+            && request.resource.data.typing.values().hasOnly([false])
+          )
+        )
         && request.resource.data.createdAt is timestamp
         && request.resource.data.unreadCounts is map
         && request.resource.data.unreadCounts.keys().hasOnly(
@@ -258,7 +622,10 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'lastMessageContent',
           'lastMessageAt',
-          'unreadCounts'
+          'unreadCounts',
+          'lastMessageType',
+          'lastSenderId',
+          'typing'
         ])
         && (
           request.resource.data.lastMessageContent == null
@@ -270,6 +637,38 @@ service cloud.firestore {
         && (
           request.resource.data.lastMessageAt == null
           || request.resource.data.lastMessageAt is timestamp
+        )
+        // The preview label and its author move together with the preview, and
+        // only to something the app can actually write.
+        && (
+          request.resource.data.get('lastMessageType', null) == null
+          || request.resource.data.lastMessageType in chatMessageTypes()
+        )
+        && (
+          request.resource.data.get('lastSenderId', null) == null
+          || request.resource.data.lastSenderId in resource.data.members
+        )
+        // Typing is one boolean per member and a member may only move their own
+        // flag, so nobody can fake "the other side is typing" or silence it.
+        && (
+          request.resource.data.get('typing', null) == null
+          || (
+            request.resource.data.typing is map
+            && request.resource.data.typing.keys().hasOnly(
+              resource.data.members
+            )
+            && request.resource.data.typing.values().hasOnly([true, false])
+            && (
+              resource.data.get('typing', null) == null
+              || request.resource.data.typing.get(
+                otherMember(resource.data.members),
+                false
+              ) == resource.data.typing.get(
+                otherMember(resource.data.members),
+                false
+              )
+            )
+          )
         )
         && request.resource.data.unreadCounts.keys().hasOnly(
           resource.data.members
@@ -298,9 +697,6 @@ service cloud.firestore {
           && request.query.limit <= 100;
 
         allow create: if isConversationMember(conversationId)
-          && request.resource.data.senderId == request.auth.uid
-          && request.resource.data.content is string
-          && request.resource.data.content.size() <= 4000
           && request.resource.data.keys().hasAll([
             'senderId',
             'clientId',
@@ -313,15 +709,8 @@ service cloud.firestore {
             // marked read.
             'recipientId'
           ])
-          && request.resource.data.keys().hasOnly([
-            'senderId',
-            'clientId',
-            'content',
-            'mediaUrl',
-            'createdAt',
-            'status',
-            'recipientId'
-          ])
+          && request.resource.data.keys().hasOnly(chatMessageFields())
+          && request.resource.data.senderId == request.auth.uid
           && request.resource.data.recipientId != request.auth.uid
           && request.resource.data.recipientId in get(
             /databases/$(database)/documents/conversations/$(conversationId)
@@ -329,30 +718,44 @@ service cloud.firestore {
           && request.resource.data.clientId == messageId
           && request.resource.data.createdAt is timestamp
           && request.resource.data.status == 'sent'
-          && (
-            request.resource.data.mediaUrl is string
-            || request.resource.data.mediaUrl == null
-          )
-          && (
-            request.resource.data.content.size() > 0
-            || request.resource.data.mediaUrl is string
-          );
+          && chatMessageIsValidOnCreate(request.resource.data, conversationId);
 
-        // Status only moves forward: sent -> delivered -> read.
-        allow update: if isConversationMember(conversationId)
-          && resource.data.senderId != request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status'])
-          && (
-            (
-              resource.data.status == 'sent'
-              && request.resource.data.status in ['delivered', 'read']
+        // Status only moves forward: sent -> delivered -> read, and it stays the
+        // only thing the receiving side may write, so a reader cannot rewrite a
+        // message they never sent.
+        allow update: if isConversationMember(conversationId) && (
+          (
+            resource.data.senderId != request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+              ['status']
             )
-            || (
-              resource.data.status == 'delivered'
-              && request.resource.data.status == 'read'
+            && chatStatusMovesForward(
+              resource.data.status,
+              request.resource.data.status
             )
-          );
+          )
+          // "Delete for me": either side can hide a message from their own view,
+          // and only from themselves.
+          || (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'deletedFor'
+            ])
+            && chatDeletedForAddsOnlyMe(
+              resource.data.get('deletedFor', []),
+              request.resource.data.deletedFor
+            )
+          )
+          // "Delete for everyone": the sender only, at most once, and nothing
+          // else about the message changes.
+          || (
+            resource.data.senderId == request.auth.uid
+            && resource.data.get('deletedForEveryone', null) != true
+            && request.resource.data.get('deletedForEveryone', null) == true
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+              ['deletedForEveryone']
+            )
+          )
+        );
         // Only the sender may remove a message, never the recipient. The app
         // offers this for queued/failed sends: without it, a send that quietly
         // reached Firestore while the local queue still said "failed" could
@@ -399,6 +802,7 @@ service cloud.firestore {
           'avatarUrl',
           'caption',
           'mediaUrl',
+          'mediaUrls',
           'mediaType',
           'likesCount',
           'commentsCount',
@@ -411,6 +815,29 @@ service cloud.firestore {
           || request.resource.data.mediaUrl == null
         )
         && request.resource.data.mediaType in ['none', 'image', 'video']
+        // Carousel media. Optional: posts written before it exist carry only
+        // mediaUrl, and hasOnly never requires a key to be present.
+        // The rules language has no list macro (`.all(...)` fails to compile in
+        // the emulator), so only the first slide and the count are checked here
+        // and FeedRepository validates every slide before it writes. The order
+        // of these clauses matters: size() >= 1 must short-circuit before the
+        // [0] lookups or an empty list becomes an evaluation error.
+        && (
+          !('mediaUrls' in request.resource.data)
+          || (
+            request.resource.data.mediaUrls is list
+            && request.resource.data.mediaUrls.size() >= 1
+            && request.resource.data.mediaUrls.size() <= 10
+            && request.resource.data.mediaUrls[0] is string
+            && request.resource.data.mediaUrls[0].size() > 0
+            // Images never mix with a clip inside one post.
+            && request.resource.data.mediaType == 'image'
+            // The legacy pointer keeps naming the first slide, so readers that
+            // only know mediaUrl still show a real image.
+            && request.resource.data.mediaUrl
+              == request.resource.data.mediaUrls[0]
+          )
+        )
         && request.resource.data.likesCount == 0
         && request.resource.data.commentsCount == 0
         && request.resource.data.createdAt == request.time
@@ -494,6 +921,12 @@ service cloud.firestore {
     // A story expires 24h after createdAt. Clients may only ever read it
     // forward in time because createdAt is pinned to request.time, so a fake
     // device clock cannot revive an old story or push one past the window.
+    function storyAuthor(storyId) {
+      return get(
+        /databases/$(database)/documents/stories/$(storyId)
+      ).data.authorId;
+    }
+
     match /stories/{storyId} {
       allow get: if verifiedUser();
       // StoryRepository queries with limit(60); this blocks bulk scraping.
@@ -520,6 +953,89 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if verifiedUser()
         && resource.data.authorId == request.auth.uid;
+
+      // Who watched one of my stories. `storyAuthor` reads the parent document,
+      // so StoryRepository.deleteStory must clear the audience while the story
+      // still exists: after the parent is gone every viewer write is refused.
+      match /viewers/{viewerId} {
+        allow create: if verifiedUser()
+          && request.auth.uid == viewerId
+          && request.auth.uid != storyAuthor(storyId)
+          && request.resource.data.keys().hasOnly(['userId', 'viewedAt'])
+          && request.resource.data.userId == viewerId
+          && request.resource.data.viewedAt == request.time;
+        // Only the author reads their audience, and always with limit(200).
+        allow get: if verifiedUser()
+          && request.auth.uid == storyAuthor(storyId);
+        allow list: if verifiedUser()
+          && request.auth.uid == storyAuthor(storyId)
+          && request.query.limit <= 200;
+        allow delete: if verifiedUser()
+          && request.auth.uid == storyAuthor(storyId);
+        allow update: if false;
+      }
+    }
+
+    // ---------------------------------------------------------------- reports
+    // Write-only from the app: a report is read in the Firebase console or by a
+    // Cloud Function, never by a client. The document id is derived from the
+    // reporter and the target, so tapping report twice on the same thing is an
+    // impossible write instead of a flood of documents.
+    match /reports/{reportId} {
+      allow read, update, delete: if false;
+
+      allow create: if verifiedUser()
+        && reportId == request.auth.uid + '_' + request.resource.data.targetId
+        && request.resource.data.keys().hasOnly([
+          'reporterId',
+          'targetType',
+          'targetId',
+          'reason',
+          'extraNote',
+          'createdAt'
+        ])
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.targetType in ['post', 'story']
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() > 0
+        && request.resource.data.targetId.size() <= 60
+        // The sheet offers exactly these reasons, and nothing else.
+        && request.resource.data.reason in [
+          'spam',
+          'harassment',
+          'nudity',
+          'violence',
+          'misinformation',
+          'other'
+        ]
+        && (
+          !('extraNote' in request.resource.data)
+          || (
+            request.resource.data.extraNote is string
+            && request.resource.data.extraNote.size() <= 300
+          )
+        )
+        // The target must exist, and nobody may report their own content: get()
+        // on a missing document yields no authorId, so both cases fall here.
+        && (
+          (
+            request.resource.data.targetType == 'post'
+            && get(
+              /databases/$(database)/documents/posts/$(
+                request.resource.data.targetId
+              )
+            ).data.authorId != request.auth.uid
+          )
+          || (
+            request.resource.data.targetType == 'story'
+            && get(
+              /databases/$(database)/documents/stories/$(
+                request.resource.data.targetId
+              )
+            ).data.authorId != request.auth.uid
+          )
+        )
+        && request.resource.data.createdAt == request.time;
     }
 
     // --------------------------------------------------------- notifications

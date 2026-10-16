@@ -6,6 +6,7 @@ import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
 import 'package:social_chat/features/home/presentation/create_post_sheet.dart';
+import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
 import 'package:social_chat/features/home/presentation/widgets/post_card.dart';
 import 'package:social_chat/features/home/presentation/widgets/stories_bar.dart';
 import 'package:social_chat/features/stories/presentation/story_providers.dart';
@@ -67,6 +68,10 @@ class HomeTab extends ConsumerWidget {
               itemCount: items.length,
               itemBuilder: (context, index) => PostCard(post: items[index]),
             ),
+          // Clearance for the transparent bottom bar.
+          const SliverToBoxAdapter(
+            child: SizedBox(height: MixSayBottomBar.barHeight),
+          ),
         ],
       ),
     );

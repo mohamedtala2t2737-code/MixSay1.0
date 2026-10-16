@@ -230,6 +230,163 @@ class AppStrings {
       ? '${number(current)}/${number(maximum)} حرف'
       : '$current/$maximum characters';
   String get noMessagesYet => isArabic ? 'مافيش رسائل لسه' : 'No messages yet';
+
+  // ---------- chat screen ----------
+  String get today => isArabic ? 'النهاردة' : 'Today';
+  String get yesterday => isArabic ? 'أمس' : 'Yesterday';
+  String get typing => isArabic ? 'يكتب…' : 'typing…';
+  String get replyAction => isArabic ? 'رد' : 'Reply';
+  String get deleteForMe => isArabic ? 'حذف عندي' : 'Delete for me';
+  String get deleteForEveryone =>
+      isArabic ? 'حذف لدى الجميع' : 'Delete for everyone';
+  String get messageDeleted =>
+      isArabic ? 'الرسالة دي اتحذفت' : 'This message was deleted';
+  String replyingTo(String name) =>
+      isArabic ? 'رد على $name' : 'Reply to $name';
+  String get offlineBanner => isArabic
+      ? 'مفيش إنترنت. الرسائل هتتبعت لما الشبكة ترجع.'
+      : 'No internet. Messages will send when the connection is back.';
+  String get userUnavailable =>
+      isArabic ? 'الحساب ده بقى محذوف' : 'This account is no longer available';
+  String get emoji => isArabic ? 'إيموجي' : 'Emoji';
+  String get stickers => isArabic ? 'ملصقات' : 'Stickers';
+
+  /// The tooltip of the button that puts the keyboard back.
+  String get closeChatPanel => isArabic ? 'إرجاع الكيبورد' : 'Back to keyboard';
+  String get takePhoto => isArabic ? 'كاميرا' : 'Camera';
+  String get youLabel => isArabic ? 'أنت' : 'You';
+
+  // ---------- forwarding a message to another chat ----------
+  String get forwardAction => isArabic ? 'تحويل' : 'Forward';
+
+  /// The little line above a copy, so nobody thinks the person wrote it here.
+  String get forwardedLabel => isArabic ? 'محوّلة' : 'Forwarded';
+  String get forwardSheetTitle =>
+      isArabic ? 'حوّل الرسالة لـ' : 'Forward this message to';
+  String get forwardSearchHint => isArabic
+      ? 'دوّر في محادثاتك أو على اسم مستخدم'
+      : 'Search your chats or a username';
+  String get forwardPeopleSection => isArabic ? 'ناس' : 'People';
+  String forwardSendTo(int count) =>
+      isArabic ? 'إرسال لـ ${number(count)}' : 'Send to $count';
+  String forwardDone(int count) => isArabic
+      ? 'اتحوّلت لـ ${number(count)} محادثة'
+      : 'Forwarded to $count chats';
+  String get forwardFailed => isArabic
+      ? 'التحويل فشل. جرّب تاني.'
+      : 'The forward did not go through. Try again.';
+
+  // ---------- the saved sticker shelf ----------
+  /// The tray tab of the stickers the user kept. Short because it sits in a
+  /// tab bar next to "Stickers" and "Emoji".
+  String get savedStickersTab => isArabic ? 'محفوظة' : 'Saved';
+
+  String get saveStickerAction => isArabic ? 'حفظ الملصق' : 'Save sticker';
+
+  String get savedStickerDone => isArabic
+      ? 'الملصق ده بقى في المحفوظة'
+      : 'That sticker is on your Saved tab';
+
+  String get savedStickerRemoved =>
+      isArabic ? 'اتشال من الملصقات المحفوظة' : 'Removed from Saved';
+
+  /// The shelf is capped, and the number is the ceiling in `firestore.rules`,
+  /// so the message says what to do about it instead of only refusing.
+  String savedStickerFull(int limit) => isArabic
+      ? 'ملصقاتك المحفوظة وصلت لحد ${number(limit)}. شيل واحد الأول.'
+      : 'Your Saved shelf holds $limit stickers. Remove one first.';
+
+  String get savedStickerFailed => isArabic
+      ? 'الحفظ فشل. جرّب تاني.'
+      : 'Could not save that sticker. Try again.';
+
+  /// The shelf could not be read, which is not the same thing as a save that
+  /// failed, so it gets its own line.
+  String get savedStickersLoadFailed => isArabic
+      ? 'الملصقات المحفوظة ما ظهرتش. جرّب تاني.'
+      : 'The Saved stickers did not load. Try again.';
+
+  String get savedStickersEmpty =>
+      isArabic ? 'مالكش ملصقات محفوظة' : 'No saved stickers yet';
+
+  /// How a bookmark is made, shown where the user would look for it.
+  String get savedStickersEmptyHint => isArabic
+      ? 'اضغط مطولاً على أي ملصق في المحادثة، وبعدين اختار حفظ الملصق'
+      : 'Press and hold any sticker in a chat, then choose Save sticker.';
+
+  String get savedStickerRemoveHint => isArabic
+      ? 'اضغط مطولاً على أي ملصق عشان يتشال من المحفوظة'
+      : 'Press and hold a sticker to take it off the shelf';
+
+  String get removeSavedSticker =>
+      isArabic ? 'شيل من المحفوظة' : 'Remove from Saved';
+
+  // ---------- chats list: preview of a message without text ----------
+  String get chatPreviewPhoto => isArabic ? 'صورة' : 'Photo';
+  String get chatPreviewVideo => isArabic ? 'فيديو' : 'Video';
+  String get chatPreviewFile => isArabic ? 'ملف' : 'File';
+  String get chatPreviewVoice => isArabic ? 'رسالة صوتية' : 'Voice message';
+  String get chatPreviewSticker => isArabic ? 'ملصق' : 'Sticker';
+  String get chatPreviewGif => isArabic ? 'صورة متحركة' : 'GIF';
+  String get chatPreviewMessage => isArabic ? 'رسالة' : 'Message';
+
+  // ---------- chat attachments that cannot be sent ----------
+  /// The ceiling for one kind of attachment, spoken in the unit it is set in so
+  /// the user knows what to shrink. 900 KB stays kilobytes; anything bigger is
+  /// read as megabytes with Arabic-Indic digits.
+  String chatSizeLimit(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      final megabytes = (bytes / (1024 * 1024)).round();
+      return isArabic ? '${number(megabytes)} ميجا' : '$megabytes MB';
+    }
+    final kilobytes = (bytes / 1024).round();
+    return isArabic ? '${number(kilobytes)} كيلو' : '$kilobytes KB';
+  }
+
+  String chatAttachmentTooLarge(String limit) => isArabic
+      ? 'الملف أكبر من $limit. اختار ملف أصغر.'
+      : 'That file is larger than $limit. Pick a smaller one.';
+  String get chatAttachmentUnusable => isArabic
+      ? 'الملف ده مش سليم. جرّب ملف تاني.'
+      : 'That file cannot be sent. Try another one.';
+
+  // ---------- chat attachments behind a feature flag ----------
+  String get attach => isArabic ? 'مرفق' : 'Attachment';
+  String get attachDocument => isArabic ? 'مستند' : 'Document';
+  String get attachGif => isArabic ? 'صورة متحركة' : 'GIF';
+  String get playVoiceMessage =>
+      isArabic ? 'تشغيل الرسالة الصوتية' : 'Play voice message';
+  String get pauseVoiceMessage => isArabic ? 'إيقاف مؤقت' : 'Pause';
+  String get playVideoMessage => isArabic ? 'تشغيل الفيديو' : 'Play video';
+  String get openFile => isArabic ? 'تنزيل الملف وفتحه' : 'Download and open';
+  String get mediaNotAvailable => isArabic
+      ? 'الملف ده مش متاح حالياً'
+      : 'This file is not available right now';
+  String downloadingFile(int percent) =>
+      isArabic ? 'جاري التنزيل… ${number(percent)}٪' : 'Downloading… $percent%';
+  String get recordingVoice => isArabic ? 'جاري التسجيل…' : 'Recording…';
+  String get recordVoice =>
+      isArabic ? 'تسجيل رسالة صوتية' : 'Record a voice message';
+  String get micPermissionNeeded => isArabic
+      ? 'اسمح باستخدام الميكروفون علشان تبعت رسالة صوتية'
+      : 'Allow the microphone to send a voice message';
+  String get sendRecording => isArabic ? 'إرسال' : 'Send';
+  String get searchGifsHint =>
+      isArabic ? 'ابحث في الصور المتحركة…' : 'Search GIFs…';
+  String get noGifsFound =>
+      isArabic ? 'مفيش صور متحركة' : 'No GIFs for that search';
+  String get gifSearchNeedsKey => isArabic
+      ? 'البحث عن الصور المتحركة محتاج مفتاح Tenor.'
+      : 'GIF search needs a Tenor API key.';
+
+  // ---------- chat app bar ----------
+  String get voiceCall => isArabic ? 'مكالمة صوتية' : 'Voice call';
+  String get videoCall => isArabic ? 'مكالمة فيديو' : 'Video call';
+  String get chatOptions => isArabic ? 'خيارات المحادثة' : 'Chat options';
+  String get callsNotReady => isArabic
+      ? 'المكالمات مش متفعّلة في النسخة دي لسه'
+      : 'Calls are not enabled in this build yet';
+
   String get startConversation => isArabic
       ? 'ابدأ محادثة مع أي شخص من حسابه أو البحث.'
       : 'Start a conversation from a profile or search.';
@@ -267,6 +424,11 @@ class AppStrings {
   String get noStoriesSubtitle => isArabic
       ? 'الحكايات تختفي بعد ٢٤ ساعة.'
       : 'Stories disappear after 24 hours.';
+  String get storyReply => isArabic ? 'رد…' : 'Reply…';
+  String get replySent => isArabic ? 'تم إرسال الرد' : 'Reply sent';
+  String get storyViewers => isArabic ? 'المشاهدون' : 'Viewers';
+  String get noViewers =>
+      isArabic ? 'لسه محدش شافها' : 'Nobody has seen this yet';
 
   // ---------- feed ----------
   String get feedEmptyTitle => isArabic ? 'مافيش منشورات لسه' : 'No posts yet';
@@ -275,7 +437,33 @@ class AppStrings {
       : 'Be the first to post something today.';
   String get postCaptionHint => isArabic ? 'اكتب حاجه…' : 'Write a caption…';
   String get attachPhoto => isArabic ? 'إضافة صورة' : 'Add photo';
+  String get attachVideo => isArabic ? 'إضافة فيديو' : 'Add video';
+  String get mediaTooLarge => isArabic
+      ? 'الملف أكبر من ٤٨ ميجا. اختار ملف أصغر.'
+      : 'That file is over 48 MB. Pick a smaller one.';
+  String get mediaUnsupported => isArabic
+      ? 'النوع ده مش مدعوم. الصور JPG/PNG والفيديو MP4/MOV.'
+      : 'Unsupported type. Images (JPG/PNG) and videos (MP4/MOV) only.';
+  String uploadProgress(int percent) =>
+      isArabic ? 'جاري الرفع… ${number(percent)}٪' : 'Uploading… $percent%';
+  String get uploadFailed => isArabic
+      ? 'الرفع فشل. اتأكد من الإنترنت وحاول تاني.'
+      : 'Upload failed. Check your connection and try again.';
+
+  /// Shown when the server refuses the saved post itself, which for a carousel
+  /// means the deployed Firestore rules do not know the field yet. Retrying
+  /// cannot help, so the message says what is actually missing.
+  String get postRejectedByRules => isArabic
+      ? 'السيرفر رفض المنشور. قواعد داتا بيز المنشورة دلوقتي مش بسمحوا بأكثر من صورة — لازم تتحدّث، أو انشر صورة واحدة.'
+      : 'The server rejected the post. The published database rules do not allow multiple photos yet — they need updating, or post a single image.';
   String get publish => isArabic ? 'نشر' : 'Post';
+  String get videoUnavailable => isArabic
+      ? 'الفيديو ده ماقدرش يشتغل هنا.'
+      : 'This video could not be played here.';
+  String get playVideo => isArabic ? 'تشغيل' : 'Play';
+  String get pauseVideo => isArabic ? 'إيقاف مؤقت' : 'Pause';
+  String get muteVideo => isArabic ? 'كتم الصوت' : 'Mute';
+  String get unmuteVideo => isArabic ? 'تشغيل الصوت' : 'Unmute';
   String get publishing => isArabic ? 'جاري النشر…' : 'Posting…';
   String get postPublished => isArabic ? 'تم النشر' : 'Posted';
   String get like => isArabic ? 'إعجاب' : 'Like';
@@ -285,7 +473,15 @@ class AppStrings {
       isArabic ? '${number(count)} إعجاب' : '$count likes';
   String commentsCount(int count) =>
       isArabic ? '${number(count)} تعليق' : '$count comments';
+
+  /// The card's link to the thread, with the number inside it so the counter
+  /// and the link are one line instead of two.
+  String viewAllComments(int count) => isArabic
+      ? 'عرض كل التعليقات (${number(count)})'
+      : 'View all $count comments';
   String get writeComment => isArabic ? 'اكتب تعليقًا…' : 'Add a comment…';
+  String get seeMore => isArabic ? 'اقرأ المزيد' : 'See more';
+  String get seeLess => isArabic ? 'عرض أقل' : 'See less';
   String get noComments => isArabic ? 'مافيش تعليقات لسه' : 'No comments yet';
   String get commentAdded => isArabic ? 'تم إرسال التعليق' : 'Comment added';
   String get share => isArabic ? 'مشاركة' : 'Share';
@@ -300,6 +496,32 @@ class AppStrings {
       isArabic ? 'هل تريد حذف هذا المنشور؟' : 'Delete this post?';
   String get deleteConfirm => isArabic ? 'هل تريد الحذف؟' : 'Delete this?';
 
+  // ---------- reports ----------
+  String get report => isArabic ? 'إبلاغ' : 'Report';
+  String get reportPost => isArabic ? 'الإبلاغ عن المنشور' : 'Report post';
+  String get reportStory => isArabic ? 'الإبلاغ عن القصة' : 'Report story';
+  String get reportReason => isArabic
+      ? 'اختار السبب اللي يوصّف المحتوى'
+      : 'Choose the reason that fits';
+  String get reportNoteHint =>
+      isArabic ? 'ملاحظة إضافية (اختياري)' : 'Extra note (optional)';
+  String get sendReport => isArabic ? 'إرسال البلاغ' : 'Send report';
+  String get reportSent => isArabic ? 'تم إرسال البلاغ' : 'Report sent';
+
+  /// Keyed on the same values as the `reason in [...]` rule, so a label cannot
+  /// drift away from what the rules accept.
+  String reasonLabel(String reason) => switch (reason) {
+    'spam' => isArabic ? 'رسائل مزعجة' : 'Spam',
+    'harassment' => isArabic ? 'تحرش أو تنمر' : 'Harassment or bullying',
+    'nudity' => isArabic ? 'محتوى غير لائق' : 'Nudity or sexual content',
+    'violence' => isArabic ? 'عنف' : 'Violence',
+    'misinformation' => isArabic ? 'معلومات مضللة' : 'False information',
+    _ => isArabic ? 'سبب تاني' : 'Something else',
+  };
+
+  String get copyLink => isArabic ? 'نسخ الرابط' : 'Copy link';
+  String get linkCopied => isArabic ? 'تم نسخ الرابط' : 'Link copied';
+
   // ---------- notifications tab ----------
   String get noNotifications =>
       isArabic ? 'مافيش إشعارات لسه' : 'No notifications yet';
@@ -312,10 +534,76 @@ class AppStrings {
   String get notifGeneric =>
       isArabic ? 'عندك إشعار جديد' : 'updated something you follow';
 
-  // ---------- profile tab ----------
-  String get myPosts => isArabic ? 'منشوراتي' : 'My posts';
-  String get noPostsYet =>
-      isArabic ? 'لم تنشر أي شيء بعد' : 'You have not posted yet';
+  // ---------- profile screen ----------
+  String get postsStat => isArabic ? 'منشورات' : 'posts';
+  String get followersStat => isArabic ? 'متابع' : 'followers';
+  String get followingStat => isArabic ? 'أتابع' : 'following';
+  String get editProfile => isArabic ? 'تعديل الملف' : 'Edit profile';
+  String get shareProfile => isArabic ? 'مشاركة الملف' : 'Share profile';
+  String get changePhoto => isArabic ? 'تغيير الصورة' : 'Change photo';
+  String get switchAccounts => isArabic ? 'تبديل الحسابات' : 'Switch accounts';
+  String get imagesTab => isArabic ? 'الصور' : 'Images';
+  String get videosTab => isArabic ? 'الفيديوهات' : 'Videos';
+  String get textTab => isArabic ? 'النص' : 'Text';
+  String get postDetailTitle => isArabic ? 'المنشور' : 'Post';
+  String get showMore => isArabic ? 'عرض المزيد' : 'Show more';
+  String get noImages => isArabic ? 'مافيش صور لسه' : 'No photos yet';
+  String get noVideos => isArabic ? 'مافيش فيديوهات لسه' : 'No videos yet';
+  String get noTextPosts =>
+      isArabic ? 'مافيش منشورات نصية لسه' : 'No text posts yet';
+  String get followersTitle => isArabic ? 'المتابعون' : 'Followers';
+  String get followingTitle => isArabic ? 'أتابع' : 'Following';
+  String get noFollowers => isArabic ? 'مافيش متابعين لسه' : 'No followers yet';
+  String get noFollowing =>
+      isArabic ? 'انت مش بتتابع حد لسه' : 'You are not following anyone yet';
+  String get follow => isArabic ? 'متابعة' : 'Follow';
+  String get followingButton => isArabic ? 'بتتابعه' : 'Following';
+  String get profileShared =>
+      isArabic ? 'تم نسخ اسم المستخدم' : 'Username copied';
+
+  /// Shown where a control matches the reference design but the app has no
+  /// backing feature yet (profile editing, archiving, and the like).
+  String get comingSoon => isArabic ? 'قريبًا' : 'Coming soon';
+  String get comingSoonMessage => isArabic
+      ? 'الجزء ده لسه بيتبني. مفيش بيانات اتغيّرت.'
+      : 'This part is still being built. Nothing has changed.';
+
+  // ---------- settings and activity ----------
+  String get settingsAndActivity =>
+      isArabic ? 'الإعدادات والنشاط' : 'Settings and activity';
+  String get searchSettingsHint =>
+      isArabic ? 'ابحث في الإعدادات' : 'Search settings';
+  String get noSettingsMatches =>
+      isArabic ? 'مافيش إعداد بهذا الاسم' : 'No setting matches that';
+  String get yourAccountSection => isArabic ? 'حسابك' : 'Your account';
+  String get howYouUseSection =>
+      isArabic ? 'إزاي بتستخدم MixSay' : 'How you use MixSay';
+  String get whoCanSeeSection =>
+      isArabic ? 'مين بيشوف محتواك' : 'Who can see your content';
+  String get supportSection => isArabic ? 'الدعم' : 'Support';
+  String get accountItem => isArabic ? 'الحساب' : 'Account';
+  String get accountItemSubtitle => isArabic
+      ? 'كلمة السر والأمان وبياناتك الشخصية'
+      : 'Password, security, personal details';
+  String get savedItem => isArabic ? 'المحفوظات' : 'Saved';
+  String get noSavedPosts =>
+      isArabic ? 'مافيش منشورات محفوظة لسه' : 'Nothing saved yet';
+  String get archiveItem => isArabic ? 'الأرشيف' : 'Archive';
+  String get yourActivityItem => isArabic ? 'نشاطك' : 'Your activity';
+  String get timeManagementItem => isArabic ? 'إدارة الوقت' : 'Time management';
+  String get accountPrivacyItem =>
+      isArabic ? 'خصوصية الحساب' : 'Account privacy';
+  String get publicValue => isArabic ? 'عام' : 'Public';
+  String get blockedItem => isArabic ? 'المحظورون' : 'Blocked';
+  String get helpItem => isArabic ? 'المساعدة' : 'Help';
+  String get aboutItem => isArabic ? 'عن MixSay' : 'About MixSay';
+  String get languageItemSubtitle =>
+      isArabic ? 'لغة التطبيق والنصوص' : 'App language and text';
+  String get appearanceItemSubtitle =>
+      isArabic ? 'فاتح أو غامق' : 'Light or dark';
+  String get notificationsItemSubtitle => isArabic
+      ? 'إشعارات الإعجاب والتعليقات والرسائل'
+      : 'Likes, comments and message alerts';
 }
 
 class AppStringsDelegate extends LocalizationsDelegate<AppStrings> {

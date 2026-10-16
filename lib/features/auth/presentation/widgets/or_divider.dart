@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:social_chat/core/theme/app_spacing.dart';
+import 'package:social_chat/core/theme/app_typography.dart';
+
 class OrDivider extends StatelessWidget {
   const OrDivider({super.key, required this.label});
 
@@ -12,12 +15,12 @@ class OrDivider extends StatelessWidget {
       children: [
         Expanded(child: Divider(color: theme.dividerColor)),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           child: Text(
             label,
             style: TextStyle(
               color: theme.colorScheme.onSurfaceVariant,
-              fontSize: 13,
+              fontSize: AppTypography.footnote,
               fontWeight: FontWeight.w600,
             ),
           ),

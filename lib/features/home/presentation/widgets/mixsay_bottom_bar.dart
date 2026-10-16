@@ -1,12 +1,14 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/theme/app_colors.dart';
 
-/// Instagram-style bottom bar: an upward arch in the middle, with the create
-/// post button floating over the crest. A symmetric `Row` means the four tabs
-/// mirror automatically when the app switches to RTL.
+/// Flat five-slot bottom bar: Home, Messages, create post, Notifications,
+/// Profile. Icons only — the name of each tab is a `Tooltip`, and screen
+/// readers still announce it. The create button used to float above an arch cut
+/// into the middle of the bar; it is now an ordinary item in that same centre
+/// slot, so the bar is completely flat. A symmetric `Row` means the items mirror
+/// automatically when the app switches to RTL.
 class MixSayBottomBar extends StatelessWidget {
   const MixSayBottomBar({
     super.key,
@@ -16,10 +18,9 @@ class MixSayBottomBar extends StatelessWidget {
     this.unreadCount = 0,
   });
 
-  static const headroom = 18.0;
-  static const barHeight = 68.0;
-  static const archRise = 16.0;
-  static const fabSize = 56.0;
+  /// An icon-only bar: 56 is the height Material gives a plain bottom bar, and
+  /// nothing in it grows with the system text scale any more.
+  static const barHeight = 56.0;
 
   final int currentIndex;
   final ValueChanged<int> onSelect;
@@ -29,14 +30,8 @@ class MixSayBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    final theme = Theme.of(context);
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
-    // The label under each icon needs room to grow with the system text scale;
-    // the arch painter works from the laid-out size, so a taller bar keeps the
-    // same silhouette instead of clipping the tab names.
-    final barSlotHeight = MediaQuery.textScalerOf(context).scale(barHeight);
 
-    final tabs = <_NavItem>[
+    final items = <_NavItem>[
       _NavItem(
         icon: Icons.home_filled,
         label: s.home,
@@ -48,6 +43,14 @@ class MixSayBottomBar extends StatelessWidget {
         label: s.messages,
         selected: currentIndex == 1,
         onTap: () => onSelect(1),
+      ),
+      // Not a tab: it opens the composer and never takes a selected state, so
+      // the four tab indices stay 0..3 for the shell.
+      _NavItem(
+        icon: Icons.add_rounded,
+        label: s.createPost,
+        selected: false,
+        onTap: onCreate,
       ),
       _NavItem(
         icon: Icons.notifications_none_rounded,
@@ -64,163 +67,23 @@ class MixSayBottomBar extends StatelessWidget {
       ),
     ];
 
-    return SizedBox(
-      height: headroom + barSlotHeight + bottomInset,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            top: headroom,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: CustomPaint(
-              painter: _ArchBarPainter(
-                color: theme.colorScheme.surface,
-                borderColor: theme.dividerColor,
-                rise: archRise,
-              ),
-            ),
+    // Black and edgeless: the shell sets `extendBody: true` so the feed scrolls
+    // underneath this bar, and each tab leaves [barHeight] of bottom clearance
+    // so nothing sits permanently behind it.
+    return Material(
+      color: AppColors.navBar,
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: barHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [for (final item in items) Expanded(child: item)],
           ),
-          Positioned(
-            top: headroom + archRise,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(child: tabs[0]),
-                Expanded(child: tabs[1]),
-                // Symmetric spacer so the FAB always lands on screen centre.
-                const SizedBox(width: 96),
-                Expanded(child: tabs[2]),
-                Expanded(child: tabs[3]),
-              ],
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Tooltip(
-                message: s.createPost,
-                child: SizedBox(
-                  width: fabSize,
-                  height: fabSize,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          blurRadius: 14,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
-                    ),
-                    child: Material(
-                      color: theme.colorScheme.primary,
-                      shape: const CircleBorder(),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: onCreate,
-                        child: const Center(
-                          child: Icon(
-                            Icons.add_rounded,
-                            color: Colors.white,
-                            size: 30,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
-}
-
-/// Flat shoulders that arch up to a rounded crest at the horizontal centre.
-class _ArchBarPainter extends CustomPainter {
-  const _ArchBarPainter({
-    required this.color,
-    required this.borderColor,
-    required this.rise,
-  });
-
-  final Color color;
-  final Color borderColor;
-  final double rise;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final centre = size.width / 2;
-    final shoulder = math.min(size.width * 0.16, 90.0);
-    final path = Path()
-      ..moveTo(0, rise)
-      ..lineTo(centre - shoulder, rise)
-      ..cubicTo(
-        centre - shoulder * 0.42,
-        rise,
-        centre - shoulder * 0.30,
-        0,
-        centre,
-        0,
-      )
-      ..cubicTo(
-        centre + shoulder * 0.30,
-        0,
-        centre + shoulder * 0.42,
-        rise,
-        centre + shoulder,
-        rise,
-      )
-      ..lineTo(size.width, rise)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-
-    canvas.drawShadow(path, Colors.black.withValues(alpha: 0.4), 6, true);
-    canvas.drawPath(path, Paint()..color = color);
-    canvas.drawPath(
-      Path()
-        ..moveTo(0, rise)
-        ..lineTo(centre - shoulder, rise)
-        ..cubicTo(
-          centre - shoulder * 0.42,
-          rise,
-          centre - shoulder * 0.30,
-          0,
-          centre,
-          0,
-        )
-        ..cubicTo(
-          centre + shoulder * 0.30,
-          0,
-          centre + shoulder * 0.42,
-          rise,
-          centre + shoulder,
-          rise,
-        )
-        ..lineTo(size.width, rise),
-      Paint()
-        ..color = borderColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_ArchBarPainter oldDelegate) =>
-      oldDelegate.color != color ||
-      oldDelegate.borderColor != borderColor ||
-      oldDelegate.rise != rise;
 }
 
 class _NavItem extends StatelessWidget {
@@ -240,35 +103,23 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    // The bar is black whatever theme the rest of the app uses, so its icons
+    // take the fixed pair rather than the scheme's muted gray, which would
+    // disappear on black in a light theme.
     final color = selected
-        ? theme.colorScheme.primary
-        : theme.colorScheme.onSurfaceVariant;
+        ? AppColors.navIconSelected
+        : AppColors.navIconUnselected;
 
     return Tooltip(
       message: label,
       child: InkWell(
         onTap: onTap,
         child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Badge.count(
-                count: badge,
-                isLabelVisible: badge > 0,
-                child: Icon(icon, size: 26, color: color),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: color,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ],
+          child: Badge.count(
+            count: badge,
+            isLabelVisible: badge > 0,
+            backgroundColor: AppColors.navBadge,
+            child: Icon(icon, size: 30, color: color),
           ),
         ),
       ),

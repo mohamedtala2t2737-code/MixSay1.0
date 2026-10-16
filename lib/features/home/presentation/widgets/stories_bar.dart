@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
-import 'package:social_chat/core/theme/app_colors.dart';
+import 'package:social_chat/core/theme/app_radius.dart';
 import 'package:social_chat/core/utils/picked_image.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 import 'package:social_chat/features/stories/data/story_repository.dart';
+import 'package:social_chat/features/stories/presentation/seen_stories_provider.dart';
 import 'package:social_chat/features/stories/presentation/story_providers.dart';
 import 'package:social_chat/features/home/presentation/widgets/story_viewer.dart';
 
@@ -54,6 +55,7 @@ class _StoriesBarState extends ConsumerState<StoriesBar> {
   }
 
   void _openViewer(List<StoryGroup> groups, int index) {
+    ref.read(seenStoriesProvider.notifier).markSeen(groups[index].authorId);
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => StoryViewerPage(
@@ -121,7 +123,9 @@ class _StoriesBarState extends ConsumerState<StoriesBar> {
 
     final mine = groups.where((group) => group.authorId == userId).toList();
     final others = groups.where((group) => group.authorId != userId).toList();
+    // The viewer swipes through one flat list, own stories first.
     final ordered = <StoryGroup>[...mine, ...others];
+    final seen = ref.watch(seenStoriesProvider);
 
     return SizedBox(
       height: railHeight,
@@ -134,7 +138,7 @@ class _StoriesBarState extends ConsumerState<StoriesBar> {
               name: s.yourStory,
               avatarUrl: profile?.avatarUrl,
               fallbackName: profile?.fullName ?? profile?.username ?? '',
-              hasStory: mine.isNotEmpty,
+              story: mine.isNotEmpty ? AvatarStory.unseen : AvatarStory.seen,
               showPlus: true,
               busy: _uploading,
               onTap: () {
@@ -146,15 +150,19 @@ class _StoriesBarState extends ConsumerState<StoriesBar> {
               },
               onLongPress: () => _addStory(ImageSource.camera),
             ),
-            for (var index = 0; index < ordered.length; index++)
+            // Only the other authors: own stories are already the first tile,
+            // and listing them again put the same face twice in the rail.
+            for (var index = 0; index < others.length; index++)
               _StoryTile(
-                name: ordered[index].username,
-                avatarUrl: ordered[index].avatarUrl,
-                fallbackName: ordered[index].displayName,
-                hasStory: true,
+                name: others[index].username,
+                avatarUrl: others[index].avatarUrl,
+                fallbackName: others[index].displayName,
+                story: seen.contains(others[index].authorId)
+                    ? AvatarStory.seen
+                    : AvatarStory.unseen,
                 showPlus: false,
                 busy: false,
-                onTap: () => _openViewer(ordered, index),
+                onTap: () => _openViewer(ordered, mine.length + index),
               ),
           ],
         ),
@@ -188,7 +196,7 @@ class _StorySkeletonTile extends StatelessWidget {
             height: 8,
             decoration: BoxDecoration(
               color: theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: AppRadius.chipBorder,
             ),
           ),
         ],
@@ -202,7 +210,7 @@ class _StoryTile extends StatelessWidget {
     required this.name,
     required this.avatarUrl,
     required this.fallbackName,
-    required this.hasStory,
+    required this.story,
     required this.showPlus,
     required this.busy,
     required this.onTap,
@@ -212,13 +220,13 @@ class _StoryTile extends StatelessWidget {
   final String name;
   final String? avatarUrl;
   final String fallbackName;
-  final bool hasStory;
+  final AvatarStory story;
   final bool showPlus;
   final bool busy;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
-  static const _ringSize = 66.0;
+  static const _faceRadius = 26.0;
 
   @override
   Widget build(BuildContext context) {
@@ -231,87 +239,13 @@ class _StoryTile extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              width: _ringSize,
-              height: _ringSize,
-              child: Stack(
-                alignment: Alignment.center,
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: _ringSize,
-                    height: _ringSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: hasStory
-                          ? const SweepGradient(
-                              colors: [
-                                AppColors.brandBlue,
-                                AppColors.brandYellow,
-                                AppColors.brandPink,
-                                AppColors.brandPurple,
-                                AppColors.brandBlue,
-                              ],
-                            )
-                          : null,
-                      color: hasStory
-                          ? null
-                          : theme.colorScheme.surfaceContainerHighest,
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(hasStory ? 3 : 2),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: theme.colorScheme.surface,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(2),
-                          child: UserAvatar(
-                            name: fallbackName,
-                            url: avatarUrl,
-                            radius: 26,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (busy)
-                    const SizedBox(
-                      width: _ringSize,
-                      height: _ringSize,
-                      child: Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2.5),
-                        ),
-                      ),
-                    ),
-                  if (showPlus)
-                    PositionedDirectional(
-                      bottom: 2,
-                      end: 2,
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.brandBlue,
-                          border: Border.all(
-                            color: theme.colorScheme.surface,
-                            width: 2,
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.add,
-                          size: 12,
-                          color: AppColors.onBrandGradient,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+            UserAvatar(
+              name: fallbackName,
+              url: avatarUrl,
+              radius: _faceRadius,
+              story: story,
+              busy: busy,
+              showPlus: showPlus,
             ),
             const SizedBox(height: 6),
             Text(
@@ -319,9 +253,9 @@ class _StoryTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
-                color: hasStory
-                    ? theme.colorScheme.onSurface
-                    : theme.colorScheme.onSurfaceVariant,
+                color: story == AvatarStory.seen
+                    ? theme.colorScheme.onSurfaceVariant
+                    : theme.colorScheme.onSurface,
               ),
             ),
           ],

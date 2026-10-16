@@ -60,6 +60,25 @@ class StoryGroup {
   String get displayName => stories.first.displayName;
 }
 
+/// One face in the audience list of my story.
+class StoryViewer {
+  const StoryViewer({
+    required this.userId,
+    required this.username,
+    required this.fullName,
+    required this.viewedAt,
+    this.avatarUrl,
+  });
+
+  final String userId;
+  final String username;
+  final String fullName;
+  final DateTime? viewedAt;
+  final String? avatarUrl;
+
+  String get displayName => fullName.isNotEmpty ? fullName : username;
+}
+
 class StoryRepository {
   StoryRepository({
     FirebaseAuth? auth,
@@ -70,6 +89,10 @@ class StoryRepository {
        _storage = storage ?? FirebaseStorage.instance;
 
   static const storyPageSize = 60;
+
+  /// Who watched a story, and how many the delete query reads at a time. The
+  /// `viewers` rules cap a list query at this same number.
+  static const viewerPageSize = 200;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -115,6 +138,52 @@ class StoryRepository {
               )
               .toList(growable: false);
         });
+  }
+
+  /// Records that this account watched someone else's story, which is what the
+  /// author's viewers list reads. Your own story is skipped: the rules refuse
+  /// the write, and watching your own post is not an audience.
+  Future<void> markViewed(Story story) async {
+    final userId = _userId;
+    if (story.authorId == userId) return;
+    await _stories.doc(story.id).collection('viewers').doc(userId).set({
+      'userId': userId,
+      'viewedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Who watched one of my stories, most recent first.
+  ///
+  /// One query plus one profile read per viewer: the audience document only
+  /// carries an id, and the rules cap the query at [viewerPageSize], so the
+  /// cost has a hard ceiling even for a popular story.
+  Future<List<StoryViewer>> viewersOf(String storyId) async {
+    final page = await _stories
+        .doc(storyId)
+        .collection('viewers')
+        .orderBy('viewedAt', descending: true)
+        .limit(viewerPageSize)
+        .get();
+    final viewers = <StoryViewer>[];
+    for (final document in page.docs) {
+      final data = document.data();
+      final userId = data['userId'] as String? ?? document.id;
+      final viewedAt = data['viewedAt'];
+      final profile = await _firestore
+          .collection('publicProfiles')
+          .doc(userId)
+          .get();
+      viewers.add(
+        StoryViewer(
+          userId: userId,
+          username: profile.data()?['username'] as String? ?? '',
+          fullName: profile.data()?['fullName'] as String? ?? '',
+          avatarUrl: profile.data()?['avatarUrl'] as String?,
+          viewedAt: viewedAt is Timestamp ? viewedAt.toDate() : null,
+        ),
+      );
+    }
+    return viewers;
   }
 
   Future<Story> createStory({
@@ -166,10 +235,32 @@ class StoryRepository {
   }
 
   Future<void> deleteStory(Story story) async {
-    // Remove the document first: a leftover media file is recoverable, a
+    final reference = _stories.doc(story.id);
+    // The audience goes first: its rules read the parent story to decide who is
+    // allowed to write, so once the story is gone every viewer document becomes
+    // undeletable and stays in the database forever.
+    await _clearViewers(reference);
+    // Remove the document before the media: a leftover file is recoverable, a
     // story that points at deleted media is not.
-    await _stories.doc(story.id).delete();
+    await reference.delete();
     await _deleteMedia(story.mediaUrl);
+  }
+
+  /// Deletes who watched this story, `viewerPageSize` documents at a time.
+  Future<void> _clearViewers(
+    DocumentReference<Map<String, dynamic>> story,
+  ) async {
+    final viewers = story.collection('viewers');
+    while (true) {
+      final page = await viewers.limit(viewerPageSize).get();
+      if (page.docs.isEmpty) return;
+      final batch = _firestore.batch();
+      for (final document in page.docs) {
+        batch.delete(document.reference);
+      }
+      await batch.commit();
+      if (page.docs.length < viewerPageSize) return;
+    }
   }
 
   Future<void> _deleteMedia(String url) async {

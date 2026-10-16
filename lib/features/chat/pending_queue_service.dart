@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:social_chat/features/chat/chat_media.dart';
+
 enum PendingQueueFailure { network, permanent }
 
 PendingQueueFailure classifyPendingQueueFailure(Object error) {
@@ -114,22 +116,24 @@ class PendingQueueService {
         );
         await transaction.save();
         for (final entry in removed) {
-          final path = entry['local_image_path'];
-          if (path is String) {
+          for (final path in ChatAttachmentDraft.queuedFilePaths(entry)) {
             final file = File(path);
             if (await file.exists()) await file.delete();
           }
         }
       });
 
-  Future<void> cleanupOrphanedImages() => runExclusive((transaction) async {
+  /// Drops files in the pending folder that no queued message points at any
+  /// more, once they are old enough that no send can still be waiting for the
+  /// network. A queued GIF owns no file, so only real staged uploads count, and
+  /// a clip owns two files: itself and the poster staged beside it.
+  Future<void> cleanupOrphanedFiles() => runExclusive((transaction) async {
     final directory = Directory(
       '${(await getApplicationSupportDirectory()).path}/pending-chat',
     );
     if (!await directory.exists()) return;
     final referencedPaths = transaction.entries
-        .map((entry) => entry['local_image_path'])
-        .whereType<String>()
+        .expand(ChatAttachmentDraft.queuedFilePaths)
         .toSet();
     final cutoff = DateTime.now().subtract(_orphanAge);
     await for (final entity in directory.list(followLinks: false)) {
@@ -141,7 +145,7 @@ class PendingQueueService {
           await entity.delete();
         }
       } catch (error, stackTrace) {
-        _logFailure('remove an orphaned pending image', error, stackTrace);
+        _logFailure('remove an orphaned pending attachment', error, stackTrace);
       }
     }
   });
@@ -165,8 +169,7 @@ class PendingQueueService {
             entry['sender_id'] is! String ||
             entry['created_at'] is! String ||
             (entry['content'] != null && entry['content'] is! String) ||
-            (entry['local_image_path'] != null &&
-                entry['local_image_path'] is! String)) {
+            !ChatAttachmentDraft.queueFieldsAreValid(entry)) {
           throw const FormatException('Queue entry has invalid fields');
         }
         final state = entry['state'] ?? 'queued';

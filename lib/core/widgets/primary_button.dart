@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_radius.dart';
+import '../theme/app_typography.dart';
 
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
@@ -33,7 +35,7 @@ class PrimaryButton extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: color == null ? AppColors.brandGradient : null,
             color: color,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: AppRadius.mdBorder,
           ),
           child: FilledButton(
             onPressed: loading ? null : onPressed,
@@ -44,9 +46,7 @@ class PrimaryButton extends StatelessWidget {
               foregroundColor: foreground,
               disabledForegroundColor: foreground,
               shadowColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: AppRadius.mdBorder),
             ),
             child: loading
                 ? SizedBox(
@@ -57,13 +57,7 @@ class PrimaryButton extends StatelessWidget {
                       color: foreground,
                     ),
                   )
-                : Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                : Text(label, style: AppTypography.button),
           ),
         ),
       ),

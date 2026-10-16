@@ -57,7 +57,13 @@ app.*.map.json
 # Environment / secrets
 .env
 .env.*
+chat.secrets.json
 /android/key.properties
 **/key.properties
 *.keystore
 *.jks
+
+# Firebase service-account keys, whatever they are named
+*service-account*.json
+*serviceaccount*.json
+firebase-adminsdk*.json

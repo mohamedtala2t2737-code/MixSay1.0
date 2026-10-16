@@ -40,12 +40,31 @@ service firebase.storage {
         ).data.members;
     }
 
+    // Byte ceilings for a chat upload, keyed by content type because a Storage
+    // request cannot see the Firestore message it belongs to. Matches
+    // ChatFeatures and the chatMediaSizeIsAllowed() check in firestore.rules.
+    function chatUploadIsAllowed() {
+      let size = request.resource.size;
+      let type = request.resource.contentType;
+      return (
+        (type.matches('image/.*') && size < 5 * 1024 * 1024)
+        || (type.matches('video/.*') && size < 25 * 1024 * 1024)
+        || (type.matches('audio/.*') && size < 5 * 1024 * 1024)
+        || (
+          (
+            type.matches('application/.*')
+            || type.matches('text/.*')
+          )
+          && size < 10 * 1024 * 1024
+        )
+      );
+    }
+
     match /chats/{conversationId}/{senderId}/{fileName} {
       allow read: if isConversationMember(conversationId);
       allow create, update: if isConversationMember(conversationId)
         && request.auth.uid == senderId
-        && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && chatUploadIsAllowed();
       allow delete: if isConversationMember(conversationId)
         && request.auth.uid == senderId;
     }

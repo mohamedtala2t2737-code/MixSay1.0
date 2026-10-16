@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -5,8 +6,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:social_chat/core/config/chat_features.dart';
+import 'package:social_chat/features/auth/data/age_group_service.dart';
+import 'package:social_chat/features/chat/chat_forward.dart';
+import 'package:social_chat/features/chat/chat_media.dart';
+import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/pending_queue_service.dart';
 
 class ActiveChatState {
@@ -25,6 +32,31 @@ class ActiveChatState {
   }
 }
 
+/// Lets the sender walk away from an upload that is already running.
+///
+/// [cancel] before the transfer starts still cancels it: the task is handed to
+/// [attach] the moment Storage accepts it, and a request that arrived earlier
+/// is applied there. Without that, a cancel pressed while the file was still
+/// opening would do nothing and the bytes would travel anyway.
+class ChatUploadController {
+  UploadTask? _task;
+  bool _cancelRequested = false;
+
+  bool get isCancelled => _cancelRequested;
+
+  void cancel() {
+    _cancelRequested = true;
+    _task?.cancel();
+  }
+
+  void attach(UploadTask task) {
+    _task = task;
+    if (_cancelRequested) task.cancel();
+  }
+
+  void detach() => _task = null;
+}
+
 class ChatConversationPreview {
   const ChatConversationPreview({
     required this.id,
@@ -35,6 +67,8 @@ class ChatConversationPreview {
     this.lastMessageContent,
     this.lastMessageAt,
     this.unreadCount = 0,
+    this.lastMessageType = ChatMessageType.text,
+    this.lastSenderId,
   });
 
   final String id;
@@ -45,6 +79,11 @@ class ChatConversationPreview {
   final String? lastMessageContent;
   final DateTime? lastMessageAt;
   final int unreadCount;
+
+  /// What the last message was, so a photo shows as "Photo" instead of the
+  /// empty text field it carries.
+  final ChatMessageType lastMessageType;
+  final String? lastSenderId;
 
   ChatConversationPreview withPublicProfile(Map<String, dynamic>? profile) =>
       ChatConversationPreview(
@@ -58,6 +97,8 @@ class ChatConversationPreview {
         lastMessageContent: lastMessageContent,
         lastMessageAt: lastMessageAt,
         unreadCount: unreadCount,
+        lastMessageType: lastMessageType,
+        lastSenderId: lastSenderId,
       );
 
   factory ChatConversationPreview.fromFirestore(
@@ -93,6 +134,8 @@ class ChatConversationPreview {
       lastMessageContent: data['lastMessageContent'] as String?,
       lastMessageAt: _dateTime(data['lastMessageAt']),
       unreadCount: _asInt(unreadCounts[userId]),
+      lastMessageType: ChatMessageType.fromWire(data['lastMessageType']),
+      lastSenderId: data['lastSenderId'] as String?,
     );
   }
 }
@@ -104,6 +147,7 @@ class ChatConversationInfo {
     required this.otherUsername,
     required this.otherFullName,
     this.otherAvatarUrl,
+    this.otherProfileMissing = false,
   });
 
   final String conversationId;
@@ -111,6 +155,12 @@ class ChatConversationInfo {
   final String otherUsername;
   final String otherFullName;
   final String? otherAvatarUrl;
+
+  /// The other account's public profile document is gone, which is what a
+  /// deleted account looks like. The name on the conversation document is then
+  /// the last known one, and the screen says so instead of pretending the
+  /// account still exists.
+  final bool otherProfileMissing;
 }
 
 class ChatUserPreview {
@@ -139,6 +189,16 @@ class ChatMessage {
     this.documentSnapshot,
     required this.createdAt,
     required this.status,
+    this.type = ChatMessageType.text,
+    this.thumbUrl,
+    this.fileName,
+    this.fileSize,
+    this.durationMs,
+    this.stickerId,
+    this.replyTo,
+    this.deletedFor = const [],
+    this.deletedForEveryone = false,
+    this.forwarded = false,
   });
 
   final String id;
@@ -147,10 +207,37 @@ class ChatMessage {
   final String content;
   final String? mediaPath;
   final String? clientId;
+
+  /// The file on this device for a message still sitting in the offline queue,
+  /// whatever it carries: a photo, a video, a voice note or a document. Once
+  /// the upload succeeds the bubble reads [mediaPath] instead.
   final String? localImagePath;
   final QueryDocumentSnapshot<Map<String, dynamic>>? documentSnapshot;
   final DateTime createdAt;
   final String status;
+  final ChatMessageType type;
+  final String? thumbUrl;
+  final String? fileName;
+  final int? fileSize;
+  final int? durationMs;
+  final String? stickerId;
+  final ChatReply? replyTo;
+
+  /// The members who hid this message on their own side. Never the sender's
+  /// secret: `firestore.rules` only lets a member add themself.
+  final List<String> deletedFor;
+
+  /// The sender chose "delete for everyone", so both sides show a tombstone.
+  final bool deletedForEveryone;
+
+  /// This message is a copy somebody moved here from another chat. It carries
+  /// no file of its own, so the original thread's storage is never written to
+  /// twice, and the label tells the receiver they did not get it first-hand.
+  final bool forwarded;
+
+  /// Whether [userId] should see this message at all.
+  bool hiddenFor(String userId) =>
+      deletedForEveryone || deletedFor.contains(userId);
 
   factory ChatMessage.fromFirestore(
     QueryDocumentSnapshot<Map<String, dynamic>> document,
@@ -181,20 +268,124 @@ class ChatMessage {
       documentSnapshot: documentSnapshot,
       createdAt: _dateTime(data['createdAt']) ?? DateTime.now(),
       status: data['status'] as String? ?? 'sent',
+      type: ChatMessageType.fromWire(data['type']),
+      thumbUrl: data['thumbUrl'] as String?,
+      fileName: data['fileName'] as String?,
+      fileSize: data['fileSize'] is int ? data['fileSize'] as int : null,
+      durationMs: data['durationMs'] is int ? data['durationMs'] as int : null,
+      stickerId: data['stickerId'] as String?,
+      replyTo: ChatReply.fromData(data['replyTo'] as Map<String, dynamic>?),
+      deletedFor: (data['deletedFor'] as List<dynamic>? ?? []).cast<String>(),
+      deletedForEveryone: data['deletedForEveryone'] == true,
+      forwarded: data['forwarded'] == true,
     );
   }
 
-  factory ChatMessage.fromPending(Map<String, dynamic> entry) => ChatMessage(
-    id: 'pending-${entry['client_id']}',
-    conversationId: entry['conversation_id'] as String,
-    senderId: entry['sender_id'] as String,
-    content: entry['content'] as String? ?? '',
-    mediaPath: entry['local_image_path'] as String?,
-    clientId: entry['client_id'] as String,
-    localImagePath: entry['local_image_path'] as String?,
-    createdAt: DateTime.parse(entry['created_at'] as String),
-    status: entry['state'] as String? ?? 'sending',
-  );
+  factory ChatMessage.fromPending(Map<String, dynamic> entry) {
+    final attachment = ChatAttachmentDraft.fromQueueFields(entry);
+    final stickerId = entry['sticker_id'] is String
+        ? entry['sticker_id'] as String
+        : null;
+    // A queued upload still has to reach Storage, so the bubble shows the file
+    // on this device. A GIF carries the public url it will be written with.
+    final localPath = attachment != null && attachment.needsUpload
+        ? attachment.localPath
+        : null;
+    return ChatMessage(
+      id: 'pending-${entry['client_id']}',
+      conversationId: entry['conversation_id'] as String,
+      senderId: entry['sender_id'] as String,
+      content: entry['content'] as String? ?? '',
+      mediaPath: localPath ?? attachment?.localPath,
+      clientId: entry['client_id'] as String,
+      localImagePath: localPath,
+      createdAt: DateTime.parse(entry['created_at'] as String),
+      status: entry['state'] as String? ?? 'sending',
+      type: stickerId != null
+          ? ChatMessageType.sticker
+          : (attachment?.type ?? ChatMessageType.text),
+      stickerId: stickerId,
+      // Only a document is named to the receiver; a photo keeps its random
+      // staging name, which would show up as a meaningless label.
+      fileName: attachment?.type == ChatMessageType.file
+          ? attachment?.fileName
+          : null,
+      fileSize: attachment == null || attachment.byteSize <= 0
+          ? null
+          : attachment.byteSize,
+      durationMs: attachment?.durationMs,
+      replyTo: ChatReply.fromData(entry['reply_to'] as Map<String, dynamic>?),
+      forwarded: entry['forwarded'] == true,
+    );
+  }
+
+  /// Firestore documents written before this version of the rules only carry
+  /// the legacy fields, so a media message with no `type` still needs the right
+  /// label in the chats list.
+  ChatMessageType inferredType() =>
+      type == ChatMessageType.text && mediaPath != null
+      ? ChatMessageType.image
+      : type;
+}
+
+/// The quoted snapshot of the message a reply points at.
+///
+/// Only a short copy travels with the new message instead of a document
+/// reference, so rendering a reply costs no extra read and a message deleted
+/// for everyone still shows what was quoted. The rules cap [content] at the
+/// same 300 characters [ChatReply.quoteFrom] produces.
+class ChatReply {
+  const ChatReply({
+    required this.messageId,
+    required this.senderId,
+    required this.content,
+    required this.type,
+  });
+
+  static const maxContentLength = 300;
+
+  final String messageId;
+  final String senderId;
+  final String content;
+  final ChatMessageType type;
+
+  Map<String, dynamic> toMap() => {
+    'messageId': messageId,
+    'senderId': senderId,
+    'content': content,
+    'type': type.wireValue,
+  };
+
+  /// Null for a message that quotes nothing, and for a malformed map, which an
+  /// older document can hold if it was written before the rules validated
+  /// `replyTo`.
+  static ChatReply? fromData(Map<String, dynamic>? data) {
+    if (data == null) return null;
+    final messageId = data['messageId'] as String? ?? '';
+    if (messageId.isEmpty) return null;
+    return ChatReply(
+      messageId: messageId,
+      senderId: data['senderId'] as String? ?? '',
+      content: data['content'] as String? ?? '',
+      type: ChatMessageType.fromWire(data['type']),
+    );
+  }
+
+  /// Truncates on whole code points so an emoji in the quoted text cannot be
+  /// cut in half.
+  static ChatReply quoteFrom(ChatMessage message) {
+    final runes = message.content.runes.toList();
+    return ChatReply(
+      messageId: message.id,
+      senderId: message.senderId,
+      content: String.fromCharCodes(
+        runes.length > maxContentLength
+            ? runes.sublist(0, maxContentLength)
+            : runes,
+      ),
+      type: message.inferredType(),
+    );
+  }
 }
 
 DateTime? _dateTime(dynamic value) {
@@ -220,13 +411,18 @@ class ChatRepository {
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
     PendingQueueService? pendingQueue,
+    AgeGroupService? ageGroups,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _firestore = firestore ?? FirebaseFirestore.instance,
        _storage = storage ?? FirebaseStorage.instance,
-       _pendingQueue = pendingQueue ?? PendingQueueService.instance;
+       _pendingQueue = pendingQueue ?? PendingQueueService.instance,
+       _ageGroups = ageGroups ?? AgeGroupService();
 
   static const _messagePageSize = 30;
-  static const _conversationPageSize = 50;
+
+  /// Rows one page of the conversation list downloads. It is public because a
+  /// short page is how the list knows it has reached the end.
+  static const conversationPageSize = 50;
   static const _statusPageSize = 50;
   static const _profileCacheTtl = Duration(minutes: 10);
 
@@ -234,6 +430,7 @@ class ChatRepository {
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
   final PendingQueueService _pendingQueue;
+  final AgeGroupService _ageGroups;
   final _profileCache = <String, _CachedPublicProfile>{};
 
   String get _me {
@@ -250,8 +447,13 @@ class ChatRepository {
   Future<List<ChatUserPreview>> searchUsers(String query) async {
     final normalized = query.trim().toLowerCase();
     if (normalized.isEmpty) return const [];
+    // The server only ever returns profiles from the searcher's own age group,
+    // and the query says the same, so another group's name is never even read.
+    // Setting a missing group first is what lets an old account search at all.
+    final group = await _ageGroups.resolve(_me);
     final users = await _firestore
         .collection('publicProfiles')
+        .where('ageGroup', isEqualTo: group.wire)
         .orderBy('usernameLowercase')
         .startAt([normalized])
         .endAt(['$normalized\uf8ff'])
@@ -382,6 +584,28 @@ class ChatRepository {
     return conversationId;
   }
 
+  /// Turn fetched conversation documents into list rows, refreshing each row's
+  /// name and avatar from the live profile. A profile that cannot be read only
+  /// costs that one row its fresh copy; the conversation still shows.
+  Future<List<ChatConversationPreview>> _previewRows(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> documents,
+    String currentUserId,
+  ) => Future.wait(
+    documents.map((document) async {
+      final preview = ChatConversationPreview.fromFirestore(
+        document,
+        currentUserId,
+      );
+      try {
+        final profile = await _getPublicProfile(preview.otherUserId);
+        return preview.withPublicProfile(profile);
+      } catch (error, stackTrace) {
+        _logFailure('load a conversation member profile', error, stackTrace);
+        return preview;
+      }
+    }),
+  );
+
   Stream<List<ChatConversationPreview>> watchConversations({String? userId}) {
     final currentUserId = userId ?? _auth.currentUser?.uid;
     if (currentUserId == null) {
@@ -394,30 +618,30 @@ class ChatRepository {
     return _conversations
         .where('members', arrayContains: currentUserId)
         .orderBy('lastMessageAt', descending: true)
-        .limit(_conversationPageSize)
+        .limit(conversationPageSize)
         .snapshots()
-        .asyncMap((snapshot) async {
-          final items = await Future.wait(
-            snapshot.docs.map((document) async {
-              final preview = ChatConversationPreview.fromFirestore(
-                document,
-                currentUserId,
-              );
-              try {
-                final profile = await _getPublicProfile(preview.otherUserId);
-                return preview.withPublicProfile(profile);
-              } catch (error, stackTrace) {
-                _logFailure(
-                  'load a conversation member profile',
-                  error,
-                  stackTrace,
-                );
-                return preview;
-              }
-            }),
-          );
-          return items;
-        });
+        .asyncMap((snapshot) => _previewRows(snapshot.docs, currentUserId));
+  }
+
+  /// The page of the conversation list older than [before], which is the
+  /// `lastMessageAt` of the oldest row already on screen. Scrolling to the
+  /// bottom then costs one paged read instead of downloading every connection
+  /// the user has.
+  Future<List<ChatConversationPreview>> fetchOlderConversations({
+    String? userId,
+    required DateTime before,
+  }) async {
+    final currentUserId = userId ?? _auth.currentUser?.uid;
+    if (currentUserId == null) {
+      throw StateError('Sign in with Firebase to use chat');
+    }
+    final snapshot = await _conversations
+        .where('members', arrayContains: currentUserId)
+        .orderBy('lastMessageAt', descending: true)
+        .startAfter([Timestamp.fromDate(before)])
+        .limit(conversationPageSize)
+        .get();
+    return _previewRows(snapshot.docs, currentUserId);
   }
 
   Future<ChatConversationInfo> getConversationInfo(
@@ -442,8 +666,10 @@ class ChatRepository {
         participants[otherUserId] as Map<String, dynamic>? ??
         const <String, dynamic>{};
     Map<String, dynamic>? profile;
+    var profileMissing = false;
     try {
       profile = await _getPublicProfile(otherUserId);
+      profileMissing = profile == null;
     } catch (error, stackTrace) {
       _logFailure('load a conversation member profile', error, stackTrace);
     }
@@ -459,6 +685,7 @@ class ChatRepository {
       otherAvatarUrl:
           otherUser['avatarUrl'] as String? ??
           otherUser['avatar_url'] as String?,
+      otherProfileMissing: profileMissing,
     );
   }
 
@@ -539,52 +766,197 @@ class ChatRepository {
     required String conversationId,
     required String text,
     required String clientId,
+    ChatReply? replyTo,
+    bool forwarded = false,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) throw StateError('Message cannot be empty');
-    if (trimmed.length > 4000) {
-      throw ArgumentError.value(text.length, 'text', 'Maximum length is 4000');
+    if (trimmed.length > ChatFeatures.maxTextLength) {
+      throw ArgumentError.value(
+        text.length,
+        'text',
+        'Maximum length is ${ChatFeatures.maxTextLength}',
+      );
     }
     return _insertMessage(
       conversationId: conversationId,
       clientId: clientId,
       content: trimmed,
+      replyTo: replyTo,
+      forwarded: forwarded,
     );
   }
 
-  Future<ChatMessage> sendImage({
+  /// A sticker from a pack bundled in the app: no upload, only the id, so the
+  /// message costs one document write and both sides render the same asset.
+  Future<ChatMessage> sendSticker({
     required String conversationId,
-    required Uint8List bytes,
+    required String stickerId,
     required String clientId,
+    ChatReply? replyTo,
+    bool forwarded = false,
+  }) {
+    if (!ChatFeatures.anyStickerSource) {
+      throw StateError('Stickers are disabled');
+    }
+    return _insertMessage(
+      conversationId: conversationId,
+      clientId: clientId,
+      type: ChatMessageType.sticker,
+      stickerId: stickerId,
+      replyTo: replyTo,
+      forwarded: forwarded,
+    );
+  }
+
+  /// Uploads [draft] and writes the message that points at the uploaded
+  /// object, or at the draft's own url when the type needs no upload.
+  ///
+  /// [onProgress] receives 0..1 while the file travels and [controller] can
+  /// abort a running upload. Anything that fails after the upload — a write the
+  /// rules refuse included — deletes the object again, so an abandoned send
+  /// leaves no billable file behind.
+  Future<ChatMessage> sendMedia({
+    required String conversationId,
+    required ChatAttachmentDraft draft,
+    required String clientId,
+    ChatReply? replyTo,
+    ChatUploadController? controller,
+    void Function(double fraction)? onProgress,
+    bool forwarded = false,
   }) async {
-    final senderId = _me;
-    final path = 'chats/$conversationId/$senderId/$clientId.jpg';
-    final imageReference = _storage.ref(path);
-    try {
-      await imageReference.putData(
-        bytes,
-        SettableMetadata(contentType: 'image/jpeg'),
+    final sized = await draft.withMeasuredSize();
+    final rejection = chatMediaRejection(sized);
+    if (rejection != null) throw rejection;
+    if (!sized.needsUpload) {
+      return _insertMessage(
+        conversationId: conversationId,
+        clientId: clientId,
+        content: sized.caption ?? '',
+        type: sized.type,
+        mediaPath: sized.localPath,
+        replyTo: replyTo,
+        forwarded: forwarded,
       );
+    }
+    final senderId = _me;
+    final path = sized.storagePath(
+      conversationId: conversationId,
+      senderId: senderId,
+      clientId: clientId,
+    );
+    final poster = sized.thumbnailPath;
+    final posterPath = poster == null
+        ? null
+        : sized.thumbnailStoragePath(
+            conversationId: conversationId,
+            senderId: senderId,
+            clientId: clientId,
+          );
+    final reference = _storage.ref(path);
+    final posterReference = posterPath == null
+        ? null
+        : _storage.ref(posterPath);
+    try {
+      await _upload(
+        reference,
+        file: File(sized.localPath),
+        contentType: sized.contentType,
+        controller: controller,
+        onProgress: onProgress,
+      );
+      if (poster != null && posterReference != null) {
+        // The poster is a few dozen kilobytes, so it gets no separate progress
+        // of its own; it does share the cancel button with the clip.
+        await _upload(
+          posterReference,
+          file: File(poster),
+          contentType: chatMediaThumbnailContentType,
+          controller: controller,
+        );
+      }
       return await _insertMessage(
         conversationId: conversationId,
         clientId: clientId,
+        content: sized.caption ?? '',
+        type: sized.type,
         mediaPath: path,
+        thumbUrl: posterPath,
+        // Only a document is named to the receiver; a photo's staging name
+        // would read as noise under the bubble.
+        fileName: sized.type == ChatMessageType.file ? sized.fileName : null,
+        fileSize: sized.byteSize,
+        durationMs: _durationWithinRules(sized.durationMs),
+        replyTo: replyTo,
+        forwarded: forwarded,
       );
     } catch (error, stackTrace) {
-      try {
-        await imageReference.delete();
-      } catch (cleanupError, cleanupStackTrace) {
-        _logFailure(
-          'remove an unreferenced uploaded chat image',
-          cleanupError,
-          cleanupStackTrace,
-        );
+      await _discardUpload(reference, sized.type);
+      final posterUpload = posterReference;
+      if (posterUpload != null) {
+        await _discardUpload(posterUpload, ChatMessageType.image);
       }
       Error.throwWithStackTrace(error, stackTrace);
     }
   }
 
-  Future<String> getImageUrl(String pathOrUrl) {
+  /// Removes an object that no message ended up pointing at. The removal is
+  /// best effort: the send already failed, and a second failure here must not
+  /// replace the reason the user was about to be told.
+  Future<void> _discardUpload(Reference reference, ChatMessageType type) async {
+    try {
+      await reference.delete();
+    } catch (cleanupError, cleanupStackTrace) {
+      _logFailure(
+        'remove an unreferenced uploaded chat ${type.wireValue}',
+        cleanupError,
+        cleanupStackTrace,
+      );
+    }
+  }
+
+  /// Runs the upload to completion, reporting progress when the caller wants
+  /// it. Cancelling makes `await task` throw, so the caller's cleanup runs and
+  /// no message is written for half-travelled bytes.
+  Future<void> _upload(
+    Reference reference, {
+    required File file,
+    required String contentType,
+    ChatUploadController? controller,
+    void Function(double fraction)? onProgress,
+  }) async {
+    final task = reference.putFile(
+      file,
+      SettableMetadata(contentType: contentType),
+    );
+    controller?.attach(task);
+    StreamSubscription<TaskSnapshot>? progress;
+    try {
+      if (onProgress != null) {
+        progress = task.snapshotEvents.listen((snapshot) {
+          if (snapshot.totalBytes <= 0) return;
+          onProgress(
+            (snapshot.bytesTransferred / snapshot.totalBytes).clamp(0.0, 1.0),
+          );
+        });
+      }
+      await task;
+    } finally {
+      await progress?.cancel();
+      controller?.detach();
+    }
+  }
+
+  /// `firestore.rules` refuses a `durationMs` above ten minutes, so a longer
+  /// clip is sent without the label instead of being denied outright.
+  static int? _durationWithinRules(int? durationMs) =>
+      durationMs != null && durationMs <= chatMediaMaxDurationMs
+      ? durationMs
+      : null;
+
+  /// The url a bubble or a player uses for a Storage object — or the object
+  /// itself when the sender wrote a public url, which is what a GIF does.
+  Future<String> getMediaUrl(String pathOrUrl) {
     final uri = Uri.tryParse(pathOrUrl);
     if (uri != null &&
         (uri.scheme == 'https' || uri.scheme == 'http') &&
@@ -594,47 +966,223 @@ class ChatRepository {
     return _storage.ref(pathOrUrl).getDownloadURL();
   }
 
+  /// Brings a received attachment down to this device and returns the path it
+  /// landed on, so a document can be opened in another app and a clip can be
+  /// replayed without spending a download on every scroll.
+  ///
+  /// The file lives in the app's own folder under the sender's object name,
+  /// which is unique per message, so the same message tapped twice reuses what
+  /// is already there instead of travelling the bytes again.
+  Future<String> saveMediaToFile({
+    required String mediaPath,
+    required String fileName,
+    void Function(double fraction)? onProgress,
+  }) async {
+    final url = await getMediaUrl(mediaPath);
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasAbsolutePath) {
+      throw StateError('Nothing to download at $mediaPath');
+    }
+    final supportDirectory = await getApplicationSupportDirectory();
+    final folder =
+        '${supportDirectory.path}/chat-media/'
+        '${mediaPath.split('/').last}';
+    final target = File('$folder/${chatSafeReceivedName(fileName)}');
+    if (await target.exists() && await target.length() > 0) {
+      onProgress?.call(1);
+      return target.path;
+    }
+    await target.parent.create(recursive: true);
+    return _writeDownload(uri, target, onProgress);
+  }
+
+  Future<String> _writeDownload(
+    Uri uri,
+    File target,
+    void Function(double fraction)? onProgress,
+  ) async {
+    final client = http.Client();
+    try {
+      final response = await client.send(http.Request('GET', uri));
+      if (response.statusCode != 200) {
+        await response.stream.drain<void>();
+        throw StateError('Download failed with code ${response.statusCode}');
+      }
+      final total = response.contentLength;
+      final sink = target.openWrite();
+      var received = 0;
+      try {
+        await for (final chunk in response.stream) {
+          sink.add(chunk);
+          received += chunk.length;
+          if (onProgress != null && total != null && total > 0) {
+            onProgress((received / total).clamp(0.0, 1.0));
+          }
+        }
+      } finally {
+        await sink.close();
+      }
+      return target.path;
+    } catch (error) {
+      // A half-written file opens as garbage in another app, so it goes.
+      try {
+        if (await target.exists()) await target.delete();
+      } catch (_) {}
+      Error.throwWithStackTrace(error, StackTrace.current);
+    } finally {
+      client.close();
+    }
+  }
+
+  /// The copy of a message another chat gets, written now.
+  ///
+  /// It carries the same payload and no file of its own, so a forward costs one
+  /// document write like any other message: a sticker travels by its pack id and
+  /// a GIF by the public url it already had. [ChatForwardPayload.from] is what
+  /// decides whether a message can travel at all, and it refuses anything that
+  /// would need a second upload.
+  Future<ChatMessage> sendForward({
+    required String conversationId,
+    required ChatForwardPayload payload,
+    required String clientId,
+  }) {
+    final stickerId = payload.stickerId;
+    final mediaUrl = payload.mediaUrl;
+    return switch (payload.type) {
+      ChatMessageType.text => sendMessage(
+        conversationId: conversationId,
+        text: payload.text,
+        clientId: clientId,
+        forwarded: true,
+      ),
+      ChatMessageType.sticker when stickerId != null => sendSticker(
+        conversationId: conversationId,
+        stickerId: stickerId,
+        clientId: clientId,
+        forwarded: true,
+      ),
+      ChatMessageType.gif when mediaUrl != null => sendMedia(
+        conversationId: conversationId,
+        draft: _forwardedGifDraft(payload, mediaUrl, clientId),
+        clientId: clientId,
+        forwarded: true,
+      ),
+      _ => throw ArgumentError.value(
+        payload.type,
+        'payload',
+        'a forward carries no file to upload',
+      ),
+    };
+  }
+
+  /// The same copy parked in the offline queue, sent by [flushPendingMessages]
+  /// with its forwarded label intact.
+  Future<ChatMessage> queueForward({
+    required String conversationId,
+    required ChatForwardPayload payload,
+    required String clientId,
+  }) {
+    final mediaUrl = payload.mediaUrl;
+    return queueMessage(
+      conversationId: conversationId,
+      text: payload.text,
+      clientId: clientId,
+      stickerId: payload.stickerId,
+      attachment: payload.type == ChatMessageType.gif && mediaUrl != null
+          ? _forwardedGifDraft(payload, mediaUrl, clientId)
+          : null,
+      forwarded: true,
+    );
+  }
+
+  static ChatAttachmentDraft _forwardedGifDraft(
+    ChatForwardPayload payload,
+    String url,
+    String clientId,
+  ) => ChatAttachmentDraft(
+    type: ChatMessageType.gif,
+    localPath: url,
+    fileName: '$clientId.gif',
+    byteSize: 0,
+    caption: payload.text.isEmpty ? null : payload.text,
+  );
+
   Future<ChatMessage> queueMessage({
     required String conversationId,
     required String text,
     required String clientId,
+    ChatAttachmentDraft? attachment,
+    String? stickerId,
+    ChatReply? replyTo,
+    bool forwarded = false,
   }) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) throw StateError('Message cannot be empty');
-    final createdAt = DateTime.now().toUtc();
+    if (trimmed.isEmpty && attachment == null && stickerId == null) {
+      throw StateError('Message cannot be empty');
+    }
+    final staged = attachment == null
+        ? null
+        : await _stage(attachment.copyWith(caption: trimmed), clientId);
+    if (staged != null) {
+      final rejection = chatMediaRejection(staged);
+      if (rejection != null) throw rejection;
+    }
     final entry = <String, dynamic>{
       'client_id': clientId,
       'conversation_id': conversationId,
       'sender_id': _me,
       'content': trimmed,
-      'created_at': createdAt.toIso8601String(),
+      'created_at': DateTime.now().toUtc().toIso8601String(),
       'state': 'queued',
+      if (staged != null) ...staged.toQueueFields(),
+      // A bundled sticker is only an id, so the queue can carry it whole.
+      'sticker_id': ?stickerId,
+      // The quote travels with the queued send, so a reply typed offline still
+      // arrives as a reply once the network comes back.
+      if (replyTo != null) 'reply_to': replyTo.toMap(),
+      if (forwarded) 'forwarded': true,
     };
     await _pendingQueue.enqueue(entry);
     return ChatMessage.fromPending(entry);
   }
 
-  Future<ChatMessage> queueImage({
-    required String conversationId,
-    required Uint8List bytes,
-    required String clientId,
-  }) async {
-    final directory = await getApplicationSupportDirectory();
-    final pendingDirectory = Directory('${directory.path}/pending-chat');
+  /// Copies a picked attachment into the pending folder so a restart still
+  /// finds it, and returns the draft that points at the copy. A queued GIF has
+  /// no file to keep and comes back untouched.
+  Future<ChatAttachmentDraft> _stage(
+    ChatAttachmentDraft draft,
+    String clientId,
+  ) async {
+    if (!draft.needsUpload) return draft;
+    final supportDirectory = await getApplicationSupportDirectory();
+    final pendingDirectory = Directory('${supportDirectory.path}/pending-chat');
     await pendingDirectory.create(recursive: true);
-    final imageFile = File('${pendingDirectory.path}/$clientId.jpg');
-    await imageFile.writeAsBytes(bytes, flush: true);
+    final target = File(
+      '${pendingDirectory.path}/${draft.storageObjectName(clientId)}',
+    );
+    await _copyInto(target, File(draft.localPath));
+    final poster = draft.thumbnailPath;
+    String? stagedPoster;
+    if (poster != null) {
+      // The poster travels with the clip, so a video queued without a network
+      // still arrives with a picture once the bytes can move.
+      final posterTarget = File(
+        '${pendingDirectory.path}/'
+        '$clientId$chatMediaThumbnailSuffix.jpg',
+      );
+      await _copyInto(posterTarget, File(poster));
+      stagedPoster = posterTarget.path;
+    }
+    return draft.copyWith(
+      localPath: target.path,
+      byteSize: await target.length(),
+      thumbnailPath: stagedPoster,
+    );
+  }
 
-    final entry = <String, dynamic>{
-      'client_id': clientId,
-      'conversation_id': conversationId,
-      'sender_id': _me,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-      'local_image_path': imageFile.path,
-      'state': 'queued',
-    };
-    await _pendingQueue.enqueue(entry);
-    return ChatMessage.fromPending(entry);
+  Future<void> _copyInto(File target, File source) async {
+    if (source.path == target.path) return;
+    await source.copy(target.path);
   }
 
   Future<List<ChatMessage>> getPendingMessages(String conversationId) async {
@@ -651,7 +1199,7 @@ class ChatRepository {
 
   Future<List<ChatMessage>> flushPendingMessages() async {
     final userId = _me;
-    await _pendingQueue.cleanupOrphanedImages();
+    await _pendingQueue.cleanupOrphanedFiles();
     return _pendingQueue.runExclusive((transaction) async {
       final sent = <ChatMessage>[];
       for (var index = 0; index < transaction.entries.length; index++) {
@@ -661,37 +1209,46 @@ class ChatRepository {
         entry.remove('next_attempt_at');
         await transaction.save();
 
+        ChatAttachmentDraft? draft;
         try {
           final conversationId = entry['conversation_id'] as String;
           final clientId = entry['client_id'] as String;
-          final imagePath = entry['local_image_path'] as String?;
-          final message = imagePath == null
+          final replyTo = ChatReply.fromData(
+            entry['reply_to'] as Map<String, dynamic>?,
+          );
+          draft = ChatAttachmentDraft.fromQueueFields(entry);
+          final stickerId = entry['sticker_id'] is String
+              ? entry['sticker_id'] as String
+              : null;
+          final forwarded = entry['forwarded'] == true;
+          final message = stickerId != null
+              ? await sendSticker(
+                  conversationId: conversationId,
+                  stickerId: stickerId,
+                  clientId: clientId,
+                  replyTo: replyTo,
+                  forwarded: forwarded,
+                )
+              : draft == null
               ? await _insertMessage(
                   conversationId: conversationId,
                   clientId: clientId,
                   content: entry['content'] as String? ?? '',
+                  replyTo: replyTo,
+                  forwarded: forwarded,
                 )
-              : await sendImage(
+              : await sendMedia(
                   conversationId: conversationId,
-                  bytes: await File(imagePath).readAsBytes(),
+                  draft: draft,
                   clientId: clientId,
+                  replyTo: replyTo,
+                  forwarded: forwarded,
                 );
           sent.add(message);
           transaction.entries.removeAt(index);
           index--;
           await transaction.save();
-          if (imagePath != null) {
-            try {
-              final file = File(imagePath);
-              if (await file.exists()) await file.delete();
-            } catch (error, stackTrace) {
-              _logFailure(
-                'delete an uploaded pending chat image',
-                error,
-                stackTrace,
-              );
-            }
-          }
+          await _deleteStagedFile(draft);
         } catch (error, stackTrace) {
           _logFailure('flush a queued chat message', error, stackTrace);
           final failure = classifyPendingQueueFailure(error);
@@ -711,6 +1268,26 @@ class ChatRepository {
       }
       return sent;
     });
+  }
+
+  /// Removes the private copies the queue kept for an upload that is now either
+  /// sent or doomed — a clip and the poster staged beside it count as two. The
+  /// original file in the gallery is never touched.
+  Future<void> _deleteStagedFile(ChatAttachmentDraft? draft) async {
+    if (draft == null || !draft.needsUpload) return;
+    final poster = draft.thumbnailPath;
+    for (final path in [draft.localPath, ?poster]) {
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (error, stackTrace) {
+        _logFailure(
+          'delete an uploaded pending chat attachment',
+          error,
+          stackTrace,
+        );
+      }
+    }
   }
 
   Future<List<ChatMessage>> retryPendingMessage(String clientId) async {
@@ -733,6 +1310,49 @@ class ChatRepository {
     await _pendingQueue.delete(clientId: clientId, senderId: _me);
     await _messages(conversationId).doc(clientId).delete();
   }
+
+  /// Hide a message on this device only. The rules let either member add only
+  /// themself to `deletedFor`, so the other side keeps seeing it — which is why
+  /// re-adding an id that already contains me is skipped instead of written.
+  Future<void> deleteForMe({
+    required String conversationId,
+    required ChatMessage message,
+  }) async {
+    if (message.deletedFor.contains(_me)) return;
+    await _messages(conversationId).doc(message.id).update({
+      'deletedFor': FieldValue.arrayUnion([_me]),
+    });
+  }
+
+  /// The sender's "delete for everyone": one flag on their own document, which
+  /// both sides render as a tombstone. The rules allow it once and never let it
+  /// change any other field.
+  Future<void> deleteForEveryone({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    await _messages(conversationId)
+        .doc(messageId)
+        .update({'deletedForEveryone': true});
+  }
+
+  /// Writes my typing flag, and nothing else. The rules refuse a write that
+  /// moves the other participant's flag, so a client can only claim to be
+  /// typing.
+  Future<void> setTyping(String conversationId, bool isTyping) async {
+    await _conversations.doc(conversationId).update({'typing.$_me': isTyping});
+  }
+
+  /// Whether the other participant has their typing flag set. One document
+  /// listener, not a thread listener, so the chat screen does not pay for it
+  /// twice.
+  Stream<bool> watchOtherTyping(
+    String conversationId, {
+    required String otherUserId,
+  }) => _conversations.doc(conversationId).snapshots().map((snapshot) {
+    final typing = snapshot.data()?['typing'] as Map<String, dynamic>?;
+    return typing?[otherUserId] == true;
+  });
 
   Future<void> markMessagesRead(String conversationId) async {
     final userId = _me;
@@ -762,7 +1382,7 @@ class ChatRepository {
     final conversations = await _conversations
         .where('members', arrayContains: userId)
         .orderBy('lastMessageAt', descending: true)
-        .limit(_conversationPageSize)
+        .limit(conversationPageSize)
         .get();
     for (final conversation in conversations.docs) {
       final unreadCounts =
@@ -829,40 +1449,103 @@ class ChatRepository {
     });
   }
 
+  /// The Firestore document for one outgoing message.
+  ///
+  /// It mirrors the `messages/{messageId}` create rule key for key: optional
+  /// fields are left out entirely rather than written as null, because the rule
+  /// validates each one that is present. `createdAt` is a server timestamp so
+  /// the thread order cannot be forged from the device.
+  @visibleForTesting
+  static Map<String, dynamic> messageFields({
+    required String senderId,
+    required String recipientId,
+    required String clientId,
+    required String content,
+    ChatMessageType type = ChatMessageType.text,
+    String? mediaPath,
+    String? thumbUrl,
+    String? fileName,
+    int? fileSize,
+    int? durationMs,
+    String? stickerId,
+    ChatReply? replyTo,
+    bool forwarded = false,
+  }) {
+    final fields = <String, dynamic>{
+      'senderId': senderId,
+      'recipientId': recipientId,
+      'clientId': clientId,
+      'content': content,
+      'mediaUrl': mediaPath,
+      'createdAt': FieldValue.serverTimestamp(),
+      'status': 'sent',
+      'type': type.wireValue,
+    };
+    if (thumbUrl != null) fields['thumbUrl'] = thumbUrl;
+    if (fileName != null) fields['fileName'] = fileName;
+    if (fileSize != null) fields['fileSize'] = fileSize;
+    if (durationMs != null) fields['durationMs'] = durationMs;
+    if (stickerId != null) fields['stickerId'] = stickerId;
+    if (replyTo != null) fields['replyTo'] = replyTo.toMap();
+    // Left out entirely for a message written by hand, so only a copy carries
+    // the extra key and no ordinary send changes shape.
+    if (forwarded) fields['forwarded'] = true;
+    return fields;
+  }
+
+  /// The conversation-list fields for the message that was just written. The
+  /// preview text stays null for a message with no text; the list shows the
+  /// type label from [ChatConversationPreview.lastMessageType] instead, so no
+  /// English word is ever stored.
+  @visibleForTesting
+  static Map<String, dynamic> conversationFields({
+    required String recipientId,
+    required String content,
+    required ChatMessageType type,
+    required String senderId,
+  }) => {
+    'lastMessageContent': content.isEmpty ? null : content,
+    'lastMessageAt': FieldValue.serverTimestamp(),
+    'lastMessageType': type.wireValue,
+    'lastSenderId': senderId,
+    'unreadCounts.$recipientId': FieldValue.increment(1),
+  };
+
   Future<ChatMessage> _insertMessage({
     required String conversationId,
     required String clientId,
-    String? content,
+    String content = '',
+    ChatMessageType type = ChatMessageType.text,
     String? mediaPath,
+    String? thumbUrl,
+    String? fileName,
+    int? fileSize,
+    int? durationMs,
+    String? stickerId,
+    ChatReply? replyTo,
+    bool forwarded = false,
   }) async {
     final senderId = _me;
-    final trimmedContent = content?.trim() ?? '';
-    if (trimmedContent.length > 4000) {
+    final trimmedContent = content.trim();
+    if (trimmedContent.length > ChatFeatures.maxTextLength) {
       throw ArgumentError.value(
         trimmedContent.length,
         'content',
-        'Maximum length is 4000',
+        'Maximum length is ${ChatFeatures.maxTextLength}',
       );
     }
-    if (trimmedContent.isEmpty && (mediaPath == null || mediaPath.isEmpty)) {
-      throw StateError('Message must contain text or an image');
+    if (trimmedContent.isEmpty && !type.hasVisiblePayload) {
+      throw StateError('Message must contain text or an attachment');
     }
     final conversation = _conversations.doc(conversationId);
     final message = _messages(conversationId).doc(clientId);
     return _firestore.runTransaction((transaction) async {
       final existing = await transaction.get(message);
       if (existing.exists) {
-        return ChatMessage(
+        return ChatMessage.fromData(
           id: existing.id,
           conversationId: conversationId,
-          senderId: existing.data()?['senderId'] as String? ?? senderId,
-          content: existing.data()?['content'] as String? ?? '',
-          mediaPath:
-              existing.data()?['mediaPath'] as String? ??
-              existing.data()?['mediaUrl'] as String?,
-          clientId: clientId,
-          createdAt: _dateTime(existing.data()?['createdAt']) ?? DateTime.now(),
-          status: existing.data()?['status'] as String? ?? 'sent',
+          data: existing.data() ?? const {},
         );
       }
       final conversationSnapshot = await transaction.get(conversation);
@@ -877,31 +1560,49 @@ class ChatRepository {
       }
 
       final createdAt = DateTime.now();
-      transaction.set(message, {
-        'senderId': senderId,
-        'recipientId': recipientId,
-        'clientId': clientId,
-        'content': trimmedContent,
-        'mediaUrl': mediaPath,
-        'createdAt': FieldValue.serverTimestamp(),
-        'status': 'sent',
-      });
-      transaction.update(conversation, {
-        'lastMessageContent': trimmedContent.isNotEmpty
-            ? trimmedContent
-            : 'Photo',
-        'lastMessageAt': FieldValue.serverTimestamp(),
-        'unreadCounts.$recipientId': FieldValue.increment(1),
-      });
+      transaction.set(
+        message,
+        messageFields(
+          senderId: senderId,
+          recipientId: recipientId,
+          clientId: clientId,
+          content: trimmedContent,
+          type: type,
+          mediaPath: mediaPath,
+          thumbUrl: thumbUrl,
+          fileName: fileName,
+          fileSize: fileSize,
+          durationMs: durationMs,
+          stickerId: stickerId,
+          replyTo: replyTo,
+          forwarded: forwarded,
+        ),
+      );
+      transaction.update(
+        conversation,
+        conversationFields(
+          recipientId: recipientId,
+          content: trimmedContent,
+          type: type,
+          senderId: senderId,
+        ),
+      );
       return ChatMessage(
         id: clientId,
         conversationId: conversationId,
         senderId: senderId,
-        content: content ?? '',
+        content: trimmedContent,
         mediaPath: mediaPath,
         clientId: clientId,
         createdAt: createdAt,
         status: 'sent',
+        type: type,
+        thumbUrl: thumbUrl,
+        fileName: fileName,
+        fileSize: fileSize,
+        durationMs: durationMs,
+        stickerId: stickerId,
+        replyTo: replyTo,
       );
     });
   }

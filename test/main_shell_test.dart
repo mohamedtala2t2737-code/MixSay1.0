@@ -8,14 +8,20 @@ import 'package:social_chat/core/domain/app_user.dart';
 import 'package:social_chat/core/l10n/app_strings.dart';
 import 'package:social_chat/core/theme/app_colors.dart';
 import 'package:social_chat/core/theme/app_theme.dart';
+import 'package:social_chat/core/theme/app_typography.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
 import 'package:social_chat/features/feed/data/feed_repository.dart';
 import 'package:social_chat/features/feed/presentation/feed_providers.dart';
+import 'package:social_chat/features/home/presentation/home_tab.dart';
 import 'package:social_chat/features/home/presentation/main_shell.dart';
+import 'package:social_chat/features/home/presentation/widgets/mixsay_bottom_bar.dart';
 import 'package:social_chat/features/notifications/data/notification_repository.dart';
 import 'package:social_chat/features/notifications/presentation/notification_providers.dart';
+import 'package:social_chat/features/profile/data/follow_repository.dart';
+import 'package:social_chat/features/profile/presentation/follow_providers.dart';
+import 'package:social_chat/features/profile/presentation/profile_tab_posts_provider.dart';
 import 'package:social_chat/features/stories/data/story_repository.dart';
 import 'package:social_chat/features/stories/presentation/story_providers.dart';
 
@@ -25,13 +31,34 @@ const _me = AppUser(
   fullName: 'MixSay User',
 );
 
-Widget _harness(Locale locale) => ProviderScope(
+/// An account with nothing posted yet, so the shell never asks Firestore.
+class _EmptyTab extends ProfileTabPostsController {
+  _EmptyTab(super.authorId, super.tab);
+
+  @override
+  Future<ProfileTabPosts> build() async => const ProfileTabPosts(posts: []);
+}
+
+Widget _harness(
+  Locale locale, {
+  ThemeMode themeMode = ThemeMode.dark,
+}) => ProviderScope(
   overrides: [
     currentUserIdProvider.overrideWithValue('user-me'),
     currentProfileProvider.overrideWith((ref) async => _me),
     feedPostsProvider.overrideWith((ref) => Stream.value(const <FeedPost>[])),
     authorPostsProvider.overrideWith(
       (ref, authorId) => Stream.value(const <FeedPost>[]),
+    ),
+    // The profile's content tabs, empty like the wall above them. Without this
+    // the tab would try to reach Firestore and report a load failure instead of
+    // an empty account.
+    profileTabPostsProvider.overrideWith2((key) => _EmptyTab(key.$1, key.$2)),
+    followerCountProvider.overrideWith(
+      (ref, userId) async => const FollowCount(0),
+    ),
+    followingCountProvider.overrideWith(
+      (ref, userId) async => const FollowCount(0),
     ),
     activeStoriesProvider.overrideWith(
       (ref) => Stream.value(const <StoryGroup>[]),
@@ -47,7 +74,7 @@ Widget _harness(Locale locale) => ProviderScope(
     locale: locale,
     theme: AppTheme.light,
     darkTheme: AppTheme.dark,
-    themeMode: ThemeMode.dark,
+    themeMode: themeMode,
     localizationsDelegates: const [
       AppStrings.delegate,
       ...GlobalMaterialLocalizations.delegates,
@@ -91,7 +118,66 @@ void main() {
     expect(AppColors.darkBackground, const Color(0xFF121212));
   });
 
-  testWidgets('the curved bar keeps the create button centred in LTR', (
+  testWidgets('the wordmark keeps its logo face inside the bar', (
+    tester,
+  ) async {
+    _usePhoneViewport(tester);
+    await tester.pumpWidget(_harness(const Locale('en')));
+    await tester.pumpAndSettle();
+
+    final style = tester.widget<Text>(find.text('MixSay')).style!;
+    expect(style.fontFamily, 'Kalam');
+    expect(style.fontSize, AppTypography.wordmark);
+
+    // The logo face has tall ascenders, so the word must not spill over the
+    // toolbar it sits in.
+    final bar = tester.getRect(find.byType(AppBar));
+    final wordmark = tester.getRect(find.text('MixSay'));
+    expect(wordmark.top, greaterThanOrEqualTo(bar.top));
+    expect(wordmark.bottom, lessThanOrEqualTo(bar.bottom));
+  });
+
+  for (final locale in [const Locale('en'), const Locale('ar')]) {
+    final direction = locale.languageCode == 'ar'
+        ? TextDirection.rtl
+        : TextDirection.ltr;
+
+    testWidgets(
+      'the home bar pins menu left and search right in ${locale.languageCode}',
+      (tester) async {
+        _usePhoneViewport(tester);
+        await tester.pumpWidget(_harness(locale));
+        await tester.pumpAndSettle();
+
+        final menuX = _centerX(tester, find.byIcon(Icons.menu_rounded));
+        final searchX = _centerX(tester, find.byIcon(Icons.search));
+        final wordmarkX = _centerX(tester, find.text('MixSay'));
+
+        // Physical sides, not start/end: an Arabic user must not get them
+        // swapped, and the wordmark must not drift because the two icons have
+        // different widths.
+        expect(menuX, lessThan(60));
+        expect(searchX, greaterThan(390 - 60));
+        expect(wordmarkX, closeTo(195, 2));
+
+        // Only the bar is pinned; the screen behind it still mirrors.
+        expect(
+          Directionality.of(tester.element(find.byType(MainShell))),
+          direction,
+        );
+        expect(
+          Directionality.of(tester.element(find.byIcon(Icons.search))),
+          TextDirection.ltr,
+        );
+        expect(
+          Directionality.of(tester.element(find.byType(HomeTab))),
+          direction,
+        );
+      },
+    );
+  }
+
+  testWidgets('the flat bar keeps the create item centred and level in LTR', (
     tester,
   ) async {
     _usePhoneViewport(tester);
@@ -99,6 +185,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_centerX(tester, find.byTooltip('Create a post')), closeTo(195, 1));
+    // Icons only: no tab name is painted under the bar.
+    expect(find.text('Home'), findsNothing);
+    expect(find.byTooltip('Home'), findsOneWidget);
     expect(
       _centerX(tester, find.byIcon(Icons.home_filled)),
       lessThan(_centerX(tester, find.byIcon(Icons.mail_outline_rounded))),
@@ -115,6 +204,76 @@ void main() {
       _centerX(tester, find.byIcon(Icons.notifications_none_rounded)),
       lessThan(_centerX(tester, find.byIcon(Icons.account_circle_outlined))),
     );
+
+    // Flat bar: the centre item sits on the same line as its neighbours, so
+    // there is no raised button and no arch left over from the old design.
+    final createY = tester.getCenter(find.byIcon(Icons.add_rounded)).dy;
+    for (final icon in [
+      Icons.home_filled,
+      Icons.mail_outline_rounded,
+      Icons.notifications_none_rounded,
+      Icons.account_circle_outlined,
+    ]) {
+      expect(tester.getCenter(find.byIcon(icon)).dy, closeTo(createY, 1));
+    }
+  });
+
+  testWidgets(
+    'the centre item opens the composer and never takes the tab highlight',
+    (tester) async {
+      _usePhoneViewport(tester);
+      await tester.pumpWidget(_harness(const Locale('en')));
+      await tester.pumpAndSettle();
+
+      Color iconColor(IconData icon) =>
+          tester.widget<Icon>(find.byIcon(icon)).color!;
+
+      // Home starts selected, so the create item must not take the selected
+      // colour even though it now lives between the tabs.
+      expect(iconColor(Icons.home_filled), AppColors.navIconSelected);
+      expect(iconColor(Icons.add_rounded), AppColors.navIconUnselected);
+
+      await tester.tap(find.byIcon(Icons.add_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Write a caption…'), findsOneWidget);
+      expect(find.text('Post'), findsOneWidget);
+      // The shell is still on Home behind the sheet.
+      expect(find.text('MixSay'), findsOneWidget);
+      expect(iconColor(Icons.add_rounded), AppColors.navIconUnselected);
+    },
+  );
+
+  testWidgets('the tab highlight follows the four indices after the reorder', (
+    tester,
+  ) async {
+    _usePhoneViewport(tester);
+    await tester.pumpWidget(_harness(const Locale('en')));
+    await tester.pumpAndSettle();
+
+    Color iconColor(IconData icon) =>
+        tester.widget<Icon>(find.byIcon(icon)).color!;
+
+    await tester.tap(find.byIcon(Icons.account_circle_outlined));
+    await tester.pumpAndSettle();
+    expect(iconColor(Icons.account_circle_outlined), AppColors.navIconSelected);
+    expect(iconColor(Icons.home_filled), AppColors.navIconUnselected);
+    // The profile tab paints its own bar, with the account handle in it.
+    expect(find.text('mixsay.user'), findsOneWidget);
+    expect(find.byType(AppBar), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.mail_outline_rounded));
+    await tester.pumpAndSettle();
+    expect(iconColor(Icons.mail_outline_rounded), AppColors.navIconSelected);
+    expect(
+      iconColor(Icons.account_circle_outlined),
+      AppColors.navIconUnselected,
+    );
+
+    await tester.tap(find.byIcon(Icons.home_filled));
+    await tester.pumpAndSettle();
+    expect(iconColor(Icons.home_filled), AppColors.navIconSelected);
+    expect(find.text('MixSay'), findsOneWidget);
   });
 
   testWidgets('the same tab order mirrors to the right in Arabic', (
@@ -128,9 +287,14 @@ void main() {
       Directionality.of(tester.element(find.byType(MainShell))),
       TextDirection.rtl,
     );
-    expect(find.text('الرئيسية'), findsOneWidget);
+    // The bar is icons only, so its Arabic names now live in the tooltips.
+    expect(find.byTooltip('الرئيسية'), findsOneWidget);
     expect(find.text('حكايتك'), findsOneWidget);
     expect(_centerX(tester, find.byTooltip('منشور جديد')), closeTo(195, 1));
+    expect(
+      tester.getCenter(find.byIcon(Icons.add_rounded)).dy,
+      closeTo(tester.getCenter(find.byIcon(Icons.home_filled)).dy, 1),
+    );
     expect(
       _centerX(tester, find.byIcon(Icons.home_filled)),
       greaterThan(_centerX(tester, find.byIcon(Icons.mail_outline_rounded))),
@@ -141,18 +305,57 @@ void main() {
     );
   });
 
-  testWidgets('tapping a tab swaps the AppBar title', (tester) async {
+  testWidgets(
+    'the bar is solid black and keeps its icons readable in both themes',
+    (tester) async {
+      _usePhoneViewport(tester);
+
+      Color barColor(ThemeMode mode) {
+        // Only the bar's own Material is looked at: the Scaffold wraps the slot
+        // in materials of its own, and the bar is the outermost one there.
+        final material = tester.widget<Material>(
+          find
+              .descendant(
+                of: find.byType(MixSayBottomBar),
+                matching: find.byType(Material),
+              )
+              .first,
+        );
+        expect(material.type, MaterialType.canvas);
+        return material.color!;
+      }
+
+      Color iconColor(IconData icon) =>
+          tester.widget<Icon>(find.byIcon(icon)).color!;
+
+      for (final mode in [ThemeMode.light, ThemeMode.dark]) {
+        await tester.pumpWidget(_harness(const Locale('en'), themeMode: mode));
+        await tester.pumpAndSettle();
+
+        expect(barColor(mode), AppColors.navBar);
+        // Black is black in a light theme too, so the muted icon colour has to be
+        // the one meant for dark surfaces or the tabs would read as smudges.
+        expect(iconColor(Icons.home_filled), AppColors.navIconSelected);
+        expect(
+          iconColor(Icons.account_circle_outlined),
+          AppColors.navIconUnselected,
+        );
+      }
+    },
+  );
+
+  testWidgets('tapping a tab swaps the bar above the content', (tester) async {
     _usePhoneViewport(tester);
     await tester.pumpWidget(_harness(const Locale('en')));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byIcon(Icons.account_circle_outlined));
     await tester.pumpAndSettle();
-    expect(find.text('My posts'), findsOneWidget);
+    expect(find.text('mixsay.user'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.notifications_none_rounded));
     await tester.pumpAndSettle();
-    expect(find.text('My posts'), findsNothing);
+    expect(find.text('mixsay.user'), findsNothing);
 
     await tester.tap(find.byIcon(Icons.mail_outline_rounded));
     await tester.pumpAndSettle();

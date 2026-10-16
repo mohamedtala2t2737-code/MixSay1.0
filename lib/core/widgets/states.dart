@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_typography.dart';
 
 class LoadingView extends StatelessWidget {
   const LoadingView({super.key});
@@ -8,32 +11,53 @@ class LoadingView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
+          padding: EdgeInsets.all(AppSpacing.block),
           child: CircularProgressIndicator(),
         ),
       );
 }
 
 class ErrorStateView extends StatelessWidget {
-  const ErrorStateView({super.key, required this.message, this.onRetry});
+  const ErrorStateView({
+    super.key,
+    required this.message,
+    this.onRetry,
+    this.debugDetail,
+  });
 
   final String message;
   final VoidCallback? onRetry;
+
+  /// A technical line (usually the backend error code) that only ever renders
+  /// in debug builds, so a tester can report the cause without a console.
+  final String? debugDetail;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(AppSpacing.block),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             Text(message, textAlign: TextAlign.center),
+            if (kDebugMode && debugDetail != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              SelectableText(
+                debugDetail!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: AppTypography.micro,
+                  fontFamily: 'monospace',
+                  color: Colors.grey,
+                ),
+              ),
+            ],
             if (onRetry != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.lg),
               OutlinedButton(
                 onPressed: onRetry,
                 child: Text(AppStrings.of(context).retry),
@@ -67,12 +91,12 @@ class EmptyStateView extends StatelessWidget {
     final theme = Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(AppSpacing.block),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 56, color: theme.colorScheme.onSurfaceVariant),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             Text(
               title,
               textAlign: TextAlign.center,
@@ -80,7 +104,7 @@ class EmptyStateView extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w600),
             ),
             if (subtitle != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
               Text(
                 subtitle!,
                 textAlign: TextAlign.center,
@@ -88,7 +112,7 @@ class EmptyStateView extends StatelessWidget {
               ),
             ],
             if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: AppSpacing.xl),
               FilledButton(onPressed: onAction, child: Text(actionLabel!)),
             ],
           ],

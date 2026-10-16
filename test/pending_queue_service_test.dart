@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -66,6 +67,64 @@ void main() {
           isTrue,
         );
         expect(preferences.getString(PendingQueueService.queueKey), '[]');
+      },
+    );
+
+    test('deleting a queued attachment deletes its staged file', () async {
+      final directory = Directory.systemTemp.createTempSync('mixsay-queue');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final staged = File('${directory.path}/client-1.jpg')
+        ..writeAsBytesSync([1, 2, 3]);
+      await queue.enqueue({
+        ..._entry('client-1'),
+        'media_type': 'image',
+        'local_path': staged.path,
+        'file_name': 'client-1.jpg',
+        'byte_size': 3,
+      });
+
+      await queue.delete(clientId: 'client-1', senderId: 'user');
+
+      expect(await queue.read(), isEmpty);
+      expect(staged.existsSync(), isFalse);
+    });
+
+    test('a queued gif owns no file, so deleting keeps whatever it names', () async {
+      final directory = Directory.systemTemp.createTempSync('mixsay-queue');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      // A remote url is not a path, but a same-named file could exist on disk;
+      // forgetting the message must leave it alone.
+      final lookalike = File('${directory.path}/giphy.gif')
+        ..writeAsBytesSync([9]);
+      await queue.enqueue({
+        ..._entry('client-2'),
+        'media_type': 'gif',
+        'local_path': 'https://media.giphy.com/giphy.gif',
+        'file_name': 'giphy.gif',
+      });
+
+      await queue.delete(clientId: 'client-2', senderId: 'user');
+
+      expect(lookalike.existsSync(), isTrue);
+    });
+
+    test(
+      'an attachment described with the wrong types is not read back',
+      () async {
+        final preferences = await SharedPreferences.getInstance();
+        await preferences.setString(
+          PendingQueueService.queueKey,
+          jsonEncode([
+            {
+              ..._entry('client-3'),
+              'media_type': 'image',
+              'local_path': '/tmp/a.jpg',
+              'byte_size': 'large',
+            },
+          ]),
+        );
+
+        expect(await queue.read(), isEmpty);
       },
     );
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:social_chat/core/l10n/app_strings.dart';
+import 'package:social_chat/core/widgets/confirmation_dialog.dart';
 import 'package:social_chat/features/auth/presentation/auth_providers.dart';
 
 /// Sign-out can be reached from the profile tab and the conversations app bar,
@@ -12,24 +13,13 @@ bool _signOutInFlight = false;
 Future<void> confirmAndSignOut(BuildContext context, WidgetRef ref) async {
   if (_signOutInFlight) return;
   final strings = AppStrings.of(context);
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(strings.logOut),
-      content: Text(strings.logOutConfirm),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text(strings.cancel),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: Text(strings.logOut),
-        ),
-      ],
-    ),
+  final confirmed = await askConfirmation(
+    context,
+    title: strings.logOut,
+    message: strings.logOutConfirm,
+    confirmLabel: strings.logOut,
   );
-  if (confirmed != true) return;
+  if (!confirmed) return;
   _signOutInFlight = true;
   try {
     await ref.read(authRepositoryProvider).signOut();

@@ -12,8 +12,31 @@ class EmailNotConfirmedException implements Exception {
   const EmailNotConfirmedException();
 }
 
-String describeUsernameCheckError(Object error, AppStrings s) {
-  if (error is FormatException) return s.errInvalidUsername;
+/// The database refused a write that the client was sure about — in practice
+/// the deployed Firestore rules. The user cannot fix this, so it needs its own
+/// message instead of the generic "upload failed" one.
+class PostRejectedException implements Exception {
+  const PostRejectedException();
+}
+
+/// The Firebase error code of [error], or null when it carries none.
+///
+/// The code is the only thing that tells a missing composite index
+/// (`failed-precondition`) apart from a rejected security rule
+/// (`permission-denied`), and on a phone both look like "Failed to load".
+String? firestoreErrorCode(Object? error) =>
+    error is FirebaseException ? error.code : null;
+
+/// One log line that keeps the exception type, the plugin, the code and the
+/// server message — enough to name the cause without opening the console.
+String describeFirestoreFailure(Object error) {
+  if (error case FirebaseException(:final plugin, :final code, :final message)) {
+    return '${error.runtimeType} [$plugin/$code] $message';
+  }
+  return '${error.runtimeType}: $error';
+}
+
+String describeUsernameCheckError(Object error, AppStrings s) {  if (error is FormatException) return s.errInvalidUsername;
 
   if (error is FirebaseException) {
     final message = switch (error.code) {
