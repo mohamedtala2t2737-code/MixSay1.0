@@ -1695,6 +1695,123 @@ await check('an unfollow removes both rows', async () => {
   await assertSucceeds(batch.commit());
 });
 
+console.log('\nsaved stickers');
+
+// SavedStickerRepository writes users/{me}/savedStickers/{packId}_{sticker}, so
+// a bookmark is a reference into the packs the app ships: no bytes, no URL and
+// no storage path ever reaches this collection.
+// The writer and the shelf owner are separate arguments: a rule that only holds
+// when the two differ is the one worth testing.
+const savedDoc = (as, owner, id) => on(db(as), owner, 'savedStickers', id);
+const savedRow = (packId, sticker, savedAt) => ({
+  packId,
+  sticker,
+  savedAt: savedAt ?? serverTimestamp(),
+});
+const CAT = 'mixsay-friends_cat';
+const MINE = (id) => savedDoc(ALICE, ALICE, id);
+
+await check('saving a bundled sticker writes one reference row', async () => {
+  await assertSucceeds(setDoc(MINE(CAT), savedRow('mixsay-friends', 'cat')));
+});
+await check('a stranger cannot plant a bookmark in another account shelf', async () => {
+  await assertFails(
+    setDoc(savedDoc(MALLORY, ALICE, 'mixsay-friends_moon'), savedRow('mixsay-friends', 'moon')),
+  );
+});
+await check('a bookmark cannot be written into another account', async () => {
+  await assertFails(
+    setDoc(savedDoc(ALICE, MALLORY, 'mixsay-friends_taco'), savedRow('mixsay-friends', 'taco')),
+  );
+});
+await check('a signed-out device has no bookmarks to save', async () => {
+  await assertFails(
+    setDoc(
+      on(
+        testEnv.unauthenticatedContext().firestore(),
+        ALICE,
+        'savedStickers',
+        'mixsay-friends_tea',
+      ),
+      savedRow('mixsay-friends', 'tea'),
+    ),
+  );
+});
+await check('a row whose id is not both halves is refused', async () => {
+  await assertFails(setDoc(MINE('mixsay-friends_sun'), savedRow('mixsay-friends', 'cat')));
+});
+await check('a bookmark may not carry a file, a path or a URL', async () => {
+  await assertFails(
+    setDoc(MINE('mixsay-friends_heart'), {
+      ...savedRow('mixsay-friends', 'heart'),
+      mediaUrl: 'https://example.com/heart.png',
+    }),
+  );
+});
+await check('a half outside the pack-id charset is refused', async () => {
+  // Upper case and a stray underscore: the charset the bundled pack ids use, so
+  // a made-up row cannot look like a pack the app knows, and neither half can
+  // hold the `_` that joins them into an id.
+  await assertFails(setDoc(MINE('MixSay_friends'), savedRow('MixSay-friends', 'cat')));
+  await assertFails(setDoc(MINE('a_b_c'), savedRow('a', 'b_c')));
+  await assertFails(setDoc(MINE('mixsay-friends_'), savedRow('mixsay-friends', '')));
+});
+await check('a bookmark stamped with the device clock is refused', async () => {
+  await assertFails(
+    setDoc(
+      MINE('mixsay-friends_rainbow'),
+      savedRow('mixsay-friends', 'rainbow', Timestamp.fromDate(new Date('2020-01-01'))),
+    ),
+  );
+});
+await check('saving a sticker twice is not an error', async () => {
+  // The row id already forbids a duplicate, so the second tap may only move the
+  // timestamp; anything else would report a failure for a save that worked.
+  await assertSucceeds(updateDoc(MINE(CAT), { savedAt: serverTimestamp() }));
+});
+await check('a bookmark cannot be re-pointed at another sticker', async () => {
+  await assertFails(updateDoc(MINE(CAT), { sticker: 'moon' }));
+  await assertFails(updateDoc(MINE(CAT), { packId: 'other-pack' }));
+});
+await check('the owner reads a bookmark', async () => {
+  await assertSucceeds(getDoc(MINE(CAT)));
+});
+await check('nobody else reads a bookmark', async () => {
+  await assertFails(getDoc(savedDoc(BOB, ALICE, CAT)));
+});
+await check('the owner pages the saved tab with the app ceiling', async () => {
+  await assertSucceeds(
+    getDocs(query(collection(db(ALICE), 'users', ALICE, 'savedStickers'), limit(200))),
+  );
+});
+await check('one row past the ceiling is refused', async () => {
+  await assertFails(
+    getDocs(query(collection(db(ALICE), 'users', ALICE, 'savedStickers'), limit(201))),
+  );
+});
+await check('dumping every bookmark without a limit is refused', async () => {
+  await assertFails(getDocs(collection(db(ALICE), 'users', ALICE, 'savedStickers')));
+});
+await check('a stranger cannot list another account saved stickers', async () => {
+  await assertFails(
+    getDocs(query(collection(db(MALLORY), 'users', ALICE, 'savedStickers'), limit(200))),
+  );
+});
+// The 200 ceiling itself is the app's: rules cannot count a collection, and an
+// aggregate carries no limit, so the repository counts with limit(200) and this
+// proves count() is not available to lean on.
+await check('a count() aggregate is refused under the bounded list rule', async () => {
+  await assertFails(
+    getCountFromServer(collection(db(ALICE), 'users', ALICE, 'savedStickers')),
+  );
+});
+await check('the owner removes a bookmark', async () => {
+  await assertSucceeds(deleteDoc(MINE(CAT)));
+});
+await check('nobody else removes a bookmark', async () => {
+  await assertFails(deleteDoc(savedDoc(BOB, ALICE, 'mixsay-friends_rainbow')));
+});
+
 console.log('\nreports');
 
 // A report id is reporter_target, so every case gets its own target: two

@@ -319,6 +319,54 @@ service cloud.firestore {
         allow delete: if verifiedUser() && request.auth.uid == userId;
         allow update: if false;
       }
+
+      // ----------------------------------------------------- saved stickers
+      // A save is a bookmark, not a copy: the row holds which pack and which
+      // sticker, and the picture still comes out of the assets this build
+      // ships. So a row can name a sticker that does not exist, but it can
+      // never carry bytes, a URL, or a path into somebody's storage.
+      // The id is both halves joined with `_`, and neither half may hold `_`,
+      // so one sticker has exactly one row no matter how often it is tapped,
+      // and no pair of halves can be re-split into a different savedId.
+      // Neither half is free-form either: the charset is the one
+      // ChatStickerPack's ids are written with, so a made-up document cannot
+      // look like a pack the app knows.
+      match /savedStickers/{savedId} {
+        allow get: if signedIn() && request.auth.uid == userId;
+        // The app reads one page of 200 at a time, which is also its ceiling:
+        // rules cannot count a collection, so SavedStickerRepository.count()
+        // probes with limit(200) and refuses a 201st save. An aggregate carries
+        // no limit, so count() could not be bounded here even if it existed.
+        // Capping the list is what stops a stranger's tokenless read from
+        // dumping every bookmark.
+        allow list: if signedIn()
+          && request.auth.uid == userId
+          && request.query.limit <= 200;
+        allow create: if signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(
+            ['packId', 'sticker', 'savedAt']
+          )
+          && request.resource.data.packId.matches('^[a-z0-9-]{1,40}$')
+          && request.resource.data.sticker.matches('^[a-z0-9-]{1,40}$')
+          && savedId ==
+            request.resource.data.packId
+            + '_'
+            + request.resource.data.sticker
+          && request.resource.data.savedAt == request.time;
+        // Re-saving a sticker the user already has is a no-op the row id makes
+        // impossible to duplicate, so the only thing a second tap may change is
+        // the timestamp. Without this the row would be an update, `update: if
+        // false` would refuse it, and the app would report an error for a save
+        // that had already worked.
+        allow update: if signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['savedAt']
+          )
+          && request.resource.data.savedAt == request.time;
+        allow delete: if signedIn() && request.auth.uid == userId;
+      }
     }
 
     //------------------------------------------------------- publicProfiles
