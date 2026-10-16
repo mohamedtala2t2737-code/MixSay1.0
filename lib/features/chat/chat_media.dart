@@ -362,6 +362,26 @@ Future<ChatAttachmentDraft> chatDocumentDraft({
 /// write rather than on the microphone.
 const int chatMediaMaxDurationMs = 600000;
 
+/// The draft for a take the recorder just wrote.
+///
+/// Like a clip it is used where it lies: the recorder chose the folder, the
+/// name is only what Storage stores it under, and the length travels with it
+/// because the bubble shows it before the file has finished downloading.
+Future<ChatAttachmentDraft> chatVoiceDraft({
+  required String recordedPath,
+  required String clientId,
+  required int durationMs,
+}) async {
+  final extension = chatMediaExtension(recordedPath);
+  return ChatAttachmentDraft(
+    type: ChatMessageType.voice,
+    localPath: recordedPath,
+    fileName: '$clientId.${extension.isEmpty ? 'm4a' : extension}',
+    byteSize: await File(recordedPath).length(),
+    durationMs: durationMs,
+  );
+}
+
 /// Why an attachment cannot be sent, or null when it may.
 String? chatMediaRejectionReason(ChatAttachmentDraft draft) {
   final limit = chatMediaLimitFor(draft.type);

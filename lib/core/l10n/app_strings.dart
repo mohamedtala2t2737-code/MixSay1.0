@@ -296,6 +296,11 @@ class AppStrings {
   String downloadingFile(int percent) =>
       isArabic ? 'جاري التنزيل… ${number(percent)}٪' : 'Downloading… $percent%';
   String get recordingVoice => isArabic ? 'جاري التسجيل…' : 'Recording…';
+  String get recordVoice =>
+      isArabic ? 'تسجيل رسالة صوتية' : 'Record a voice message';
+  String get micPermissionNeeded => isArabic
+      ? 'اسمح باستخدام الميكروفون علشان تبعت رسالة صوتية'
+      : 'Allow the microphone to send a voice message';
   String get sendRecording => isArabic ? 'إرسال' : 'Send';
   String get searchGifsHint =>
       isArabic ? 'ابحث في الصور المتحركة…' : 'Search GIFs…';

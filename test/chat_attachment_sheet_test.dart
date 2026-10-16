@@ -260,5 +260,21 @@ void main() {
         contains('ChatStickerPicker(onSelected: _sendSticker)'),
       );
     });
+
+    test('a voice note is a mic of its own, gated by its own flag', () {
+      // Recording is not something the sheet can hand to a picker, and the
+      // ceiling that refuses an oversized note is the one storage rules read.
+      final source = File('lib/features/chat/chat_screen.dart')
+          .readAsStringSync();
+
+      expect(source, contains('if (!ChatMessageType.voice.isGated)'));
+      expect(source, contains('_startVoiceTake'));
+      expect(source, contains('_VoiceTakeBar('));
+      expect(
+        source.contains('ChatAttachmentChoice.voice'),
+        isFalse,
+        reason: 'there is no voice row in the sheet',
+      );
+    });
   });
 }

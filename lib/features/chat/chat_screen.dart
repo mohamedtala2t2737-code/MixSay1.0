@@ -32,6 +32,7 @@ import 'package:social_chat/features/chat/chat_providers.dart';
 import 'package:social_chat/features/chat/chat_repository.dart';
 import 'package:social_chat/features/chat/chat_stickers.dart';
 import 'package:social_chat/features/chat/chat_time_labels.dart';
+import 'package:social_chat/features/chat/chat_voice_recorder.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key, required this.conversationId});
@@ -65,6 +66,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// was set: leaving the chat has to clear that flag, and `dispose()` is not
   /// allowed to read a provider any more.
   ChatRepository? _typingWriter;
+
+  /// The take being recorded now, and the one that stopped and waits to be
+  /// sent. Only one of the two is ever set.
+  ChatVoiceRecorder? _voice;
+  String? _readyTakePath;
+  int _readyTakeMs = 0;
+  Timer? _voiceTick;
   ChatMessage? _replyingTo;
   Object? _messagesStreamError;
   QueryDocumentSnapshot<Map<String, dynamic>>? _oldestMessageDocument;
@@ -112,6 +120,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _typingSubscription?.cancel();
     _typingDebounce?.cancel();
     _releaseTyping();
+    _voiceTick?.cancel();
+    // A take left in the temporary folder is the one thing leaving the chat
+    // can still throw away, and the recorder owns the microphone until it goes.
+    final recorder = _voice;
+    if (recorder != null) unawaited(recorder.dispose());
+    final readyTake = _readyTakePath;
+    if (readyTake != null) unawaited(_deleteVoiceFile(readyTake));
     _messageController.dispose();
     _messageFocusNode.dispose();
     _scrollController.dispose();
@@ -320,6 +335,104 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         await _sendDocument();
       case ChatAttachmentChoice.gif:
         await _sendGif();
+    }
+  }
+
+  /// Opens the microphone and starts a take. The plugin asks for the
+  /// permission itself, so a refusal comes back as a null path rather than as
+  /// an exception the sender has to be told about twice.
+  Future<void> _startVoiceTake() async {
+    if (_sending || _voice != null) return;
+    final recorder = ChatVoiceRecorder(source: ChatPluginVoiceSource());
+    final directory = (await getTemporaryDirectory()).path;
+    final path = await recorder.start(directory);
+    if (path == null) {
+      await recorder.dispose();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text(AppStrings.of(context).micPermissionNeeded)),
+        );
+      return;
+    }
+    setState(() {
+      _voice = recorder;
+      _readyTakePath = null;
+      _readyTakeMs = 0;
+    });
+    // One tick a second is both the clock the sender watches and the guard
+    // that stops the take before the rules would refuse it.
+    _voiceTick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_voice?.isAtLimit ?? false) {
+        unawaited(_parkVoiceTake());
+        return;
+      }
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// Ends a take and leaves the file ready to send: the sender pressed stop,
+  /// or the recording reached ten minutes.
+  Future<void> _parkVoiceTake() async {
+    final recorder = _voice;
+    if (recorder == null) return;
+    _voiceTick?.cancel();
+    _voiceTick = null;
+    _voice = null;
+    final durationMs = recorder.elapsedMs;
+    final path = await recorder.stop();
+    await recorder.dispose();
+    if (!mounted || path == null) return;
+    setState(() {
+      _readyTakePath = path;
+      _readyTakeMs = durationMs;
+    });
+  }
+
+  Future<void> _sendVoiceTake() async {
+    if (_sending) return;
+    if (_voice != null) await _parkVoiceTake();
+    final path = _readyTakePath;
+    if (path == null) return;
+    final durationMs = _readyTakeMs;
+    setState(() {
+      _readyTakePath = null;
+      _readyTakeMs = 0;
+    });
+    await _sendDraft(
+      (clientId) => chatVoiceDraft(
+        recordedPath: path,
+        clientId: clientId,
+        durationMs: durationMs,
+      ),
+    );
+  }
+
+  /// Throws the take away, which is what the sender meant by pressing cancel.
+  Future<void> _discardVoiceTake() async {
+    _voiceTick?.cancel();
+    _voiceTick = null;
+    final recorder = _voice;
+    final ready = _readyTakePath;
+    _voice = null;
+    setState(() {
+      _readyTakePath = null;
+      _readyTakeMs = 0;
+    });
+    if (recorder != null) {
+      await recorder.cancel();
+      await recorder.dispose();
+      return;
+    }
+    if (ready != null) await _deleteVoiceFile(ready);
+  }
+
+  Future<void> _deleteVoiceFile(String path) async {
+    try {
+      await File(path).delete();
+    } on FileSystemException catch (error) {
+      debugPrint('Unable to discard the recording: $error');
     }
   }
 
@@ -1215,74 +1328,107 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                               onPressed: _sending ? null : _openAttachments,
                               icon: const Icon(Icons.add_circle_outline),
                             ),
-                          Expanded(
-                            child: TextField(
-                              controller: _messageController,
-                              focusNode: _messageFocusNode,
-                              minLines: 1,
-                              maxLines: 5,
-                              maxLength: ChatFeatures.maxTextLength,
-                              textCapitalization: TextCapitalization.sentences,
-                              onChanged: _onTextChanged,
-                              onSubmitted: (_) => _sendMessage(),
-                              buildCounter:
-                                  (
-                                    context, {
-                                    required currentLength,
-                                    required isFocused,
-                                    required maxLength,
-                                  }) => currentLength >= 3900
-                                  ? Text(
-                                      s.messageCharacterCount(
-                                        currentLength,
-                                        maxLength ?? ChatFeatures.maxTextLength,
-                                      ),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall,
-                                    )
-                                  : null,
-                              decoration: InputDecoration(
-                                hintText: s.typeMessage,
-                                filled: true,
-                                fillColor: AppColors.fieldFill(
-                                  Theme.of(context).brightness,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(24),
-                                  borderSide: BorderSide.none,
+                          // A note costs Storage like any other upload, so the
+                          // mic is drawn only when that plan line is on.
+                          if (!ChatMessageType.voice.isGated)
+                            IconButton(
+                              tooltip: s.recordVoice,
+                              onPressed: _sending || _voice != null
+                                  ? null
+                                  : _startVoiceTake,
+                              icon: const Icon(Icons.mic_outlined),
+                            ),
+                          // While a take is running or waiting to be sent the
+                          // field makes way for the clock and the two controls
+                          // that finish it.
+                          if (_voice != null || _readyTakePath != null)
+                            _VoiceTakeBar(
+                              elapsed: chatMediaDurationLabel(
+                                s,
+                                _voice?.elapsedMs ?? _readyTakeMs,
+                              ),
+                              isRecording: _voice != null,
+                              recordingLabel: s.recordingVoice,
+                              cancelLabel: s.cancel,
+                              sendLabel: s.sendRecording,
+                              onCancel: _discardVoiceTake,
+                              onSend: _sending ? null : _sendVoiceTake,
+                            )
+                          else ...[
+                            Expanded(
+                              child: TextField(
+                                controller: _messageController,
+                                focusNode: _messageFocusNode,
+                                minLines: 1,
+                                maxLines: 5,
+                                maxLength: ChatFeatures.maxTextLength,
+                                textCapitalization:
+                                    TextCapitalization.sentences,
+                                onChanged: _onTextChanged,
+                                onSubmitted: (_) => _sendMessage(),
+                                buildCounter:
+                                    (
+                                      context, {
+                                      required currentLength,
+                                      required isFocused,
+                                      required maxLength,
+                                    }) => currentLength >= 3900
+                                    ? Text(
+                                        s.messageCharacterCount(
+                                          currentLength,
+                                          maxLength ??
+                                              ChatFeatures.maxTextLength,
+                                        ),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall,
+                                      )
+                                    : null,
+                                decoration: InputDecoration(
+                                  hintText: s.typeMessage,
+                                  filled: true,
+                                  fillColor: AppColors.fieldFill(
+                                    Theme.of(context).brightness,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(24),
+                                    borderSide: BorderSide.none,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: 48,
-                            height: 48,
-                            child: IconButton(
-                              onPressed: _sending ? null : _sendMessage,
-                              style: IconButton.styleFrom(
-                                backgroundColor: Theme.of(context)
-                                    .colorScheme
-                                    .primary,
-                                shape: const CircleBorder(),
-                              ),
-                              icon: _sending
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: IconButton(
+                                onPressed: _sending ? null : _sendMessage,
+                                style: IconButton.styleFrom(
+                                  backgroundColor: Theme.of(context)
+                                      .colorScheme
+                                      .primary,
+                                  shape: const CircleBorder(),
+                                ),
+                                icon: _sending
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.send,
                                         color: Colors.white,
                                       ),
-                                    )
-                                  : const Icon(Icons.send, color: Colors.white),
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
@@ -1386,3 +1532,53 @@ class _ReplyDraft extends StatelessWidget {
 }
 
 enum _MessageAction { copy, reply, deleteForMe, deleteForEveryone }
+
+/// The composer while a voice note is being taken: the running clock, a cancel
+/// that throws the recording away, and a send that uploads it.
+class _VoiceTakeBar extends StatelessWidget {
+  const _VoiceTakeBar({
+    required this.elapsed,
+    required this.isRecording,
+    required this.recordingLabel,
+    required this.cancelLabel,
+    required this.sendLabel,
+    required this.onCancel,
+    required this.onSend,
+  });
+
+  final String elapsed;
+  final bool isRecording;
+  final String recordingLabel;
+  final String cancelLabel;
+  final String sendLabel;
+  final Future<void> Function() onCancel;
+  final VoidCallback? onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Expanded(
+      child: Row(
+        children: [
+          Icon(
+            isRecording ? Icons.mic : Icons.mic_none,
+            color: isRecording ? theme.colorScheme.error : null,
+          ),
+          const SizedBox(width: 8),
+          Text(isRecording ? '$recordingLabel $elapsed' : elapsed),
+          const Spacer(),
+          IconButton(
+            tooltip: cancelLabel,
+            onPressed: onCancel,
+            icon: const Icon(Icons.close),
+          ),
+          IconButton(
+            tooltip: sendLabel,
+            onPressed: onSend,
+            icon: const Icon(Icons.send),
+          ),
+        ],
+      ),
+    );
+  }
+}

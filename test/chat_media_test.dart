@@ -496,5 +496,32 @@ void main() {
       expect(draft.byteSize, 3);
       expect(draft.contentType, 'application/octet-stream');
     });
+
+    test('a note goes from where the recorder wrote it, with its length', () async {
+      final take = File('${temp.path}/voice_1.m4a')..writeAsStringSync('ahla');
+      final draft = await chatVoiceDraft(
+        recordedPath: take.path,
+        clientId: 'c-14',
+        durationMs: 4200,
+      );
+
+      expect(draft.type, ChatMessageType.voice);
+      expect(draft.localPath, take.path);
+      expect(draft.fileName, 'c-14.m4a');
+      expect(draft.durationMs, 4200);
+      expect(draft.byteSize, 4);
+      expect(draft.contentType, 'audio/m4a');
+    });
+
+    test('a take that recorded nothing is refused, not uploaded', () async {
+      final take = File('${temp.path}/voice_2.m4a')..createSync();
+      final draft = await chatVoiceDraft(
+        recordedPath: take.path,
+        clientId: 'c-15',
+        durationMs: 0,
+      );
+
+      expect(chatMediaRejectionReason(draft), 'empty');
+    });
   });
 }

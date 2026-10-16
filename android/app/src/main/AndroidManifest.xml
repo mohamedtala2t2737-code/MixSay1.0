@@ -11,6 +11,13 @@
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false"/>
+    <!-- Voice notes ask for this at record time, when ChatFeatures.voiceMessages
+         is on. required="false" keeps the app installable on a device with no
+         microphone, which would otherwise only ever send text. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false"/>
     <application
         android:label="MixSay"
         android:name="${applicationName}"
