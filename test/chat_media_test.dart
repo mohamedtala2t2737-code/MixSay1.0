@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:social_chat/features/chat/chat_media.dart';
@@ -389,6 +391,110 @@ void main() {
       expect(shown.length, lessThan(long.length));
       expect(shown, endsWith('.pdf'));
       expect(chatSafeReceivedName('b' * 200), isNot(contains('.')));
+    });
+  });
+
+  group('a picked clip and a picked document', () {
+    late Directory temp;
+
+    setUp(() => temp = Directory.systemTemp.createTempSync('mixsay_chat_media'));
+    tearDown(() => temp.deleteSync(recursive: true));
+
+    test('a clip keeps its own extension under the message id', () async {
+      final source = File('${temp.path}/IMG_0234.MOV')
+        ..writeAsStringSync('bytes');
+      final draft = await chatVideoDraft(
+        pickedPath: source.path,
+        pickedName: 'IMG_0234.MOV',
+        clientId: 'c-9',
+      );
+
+      expect(draft.type, ChatMessageType.video);
+      expect(draft.fileName, 'c-9.mov');
+      expect(draft.storageObjectName('c-9'), 'c-9.mov');
+      expect(draft.contentType, 'video/quicktime');
+      expect(draft.byteSize, 5);
+    });
+
+    test('a clip with nothing to tell its format goes as the default mp4', () async {
+      final source = File('${temp.path}/clip')..writeAsStringSync('bytes');
+      final draft = await chatVideoDraft(
+        pickedPath: source.path,
+        pickedName: 'clip',
+        clientId: 'c-9',
+      );
+
+      expect(draft.fileName, 'c-9.mp4');
+      expect(draft.contentType, 'video/mp4');
+    });
+
+    test('an unreadable clip is refused instead of sent as nothing', () async {
+      final source = File('${temp.path}/empty.mp4')..createSync();
+      final draft = await chatVideoDraft(
+        pickedPath: source.path,
+        pickedName: 'empty.mp4',
+        clientId: 'c-9',
+      );
+
+      expect(chatMediaRejectionReason(draft), 'empty');
+    });
+
+    test('a document is copied beside the queue and keeps the name its sender gave it', () async {
+      final source = File('${temp.path}/origin.pdf')..writeAsStringSync('invoice');
+      final draft = await chatDocumentDraft(
+        fileName: 'Invoice (final).pdf',
+        pickedPath: source.path,
+        pickedBytes: null,
+        directory: temp.path,
+        clientId: 'c-10',
+      );
+
+      expect(draft.type, ChatMessageType.file);
+      expect(draft.fileName, 'Invoice (final).pdf');
+      expect(draft.localPath, isNot(source.path));
+      expect(File(draft.localPath).readAsStringSync(), 'invoice');
+      expect(draft.byteSize, 7);
+      expect(draft.contentType, 'application/pdf');
+    });
+
+    test('a uri the app cannot open is taken as bytes instead', () async {
+      final draft = await chatDocumentDraft(
+        fileName: 'notes.txt',
+        pickedPath: null,
+        pickedBytes: Uint8List.fromList(utf8.encode('ahla')),
+        directory: temp.path,
+        clientId: 'c-11',
+      );
+
+      expect(File(draft.localPath).readAsStringSync(), 'ahla');
+      expect(draft.contentType, 'text/plain');
+    });
+
+    test('a pick that gave neither a path nor bytes is refused, not sent empty', () async {
+      await expectLater(
+        chatDocumentDraft(
+          fileName: 'x.txt',
+          pickedPath: null,
+          pickedBytes: null,
+          directory: temp.path,
+          clientId: 'c-12',
+        ),
+        throwsA(isA<ChatAttachmentRejectedException>()),
+      );
+    });
+
+    test('a document with no extension still lands in the message folder', () async {
+      final draft = await chatDocumentDraft(
+        fileName: 'README',
+        pickedPath: null,
+        pickedBytes: Uint8List.fromList([1, 2, 3]),
+        directory: temp.path,
+        clientId: 'c-13',
+      );
+
+      expect(draft.localPath, endsWith('/c-13'));
+      expect(draft.byteSize, 3);
+      expect(draft.contentType, 'application/octet-stream');
     });
   });
 }

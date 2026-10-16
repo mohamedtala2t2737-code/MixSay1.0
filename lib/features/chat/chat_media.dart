@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:social_chat/core/config/chat_features.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
@@ -302,6 +303,58 @@ String chatSafeReceivedName(String? rawName) {
   final extension = chatMediaExtension(cleaned);
   final head = cleaned.substring(0, chatReceivedNameDisplayLength);
   return extension.isEmpty ? '$head…' : '$head….$extension';
+}
+
+/// The draft for a clip the gallery handed over.
+///
+/// Nothing is re-encoded or copied: a phone can spend minutes on a video, and
+/// [chatMediaRejection] refuses an oversized one before a byte leaves the
+/// device. The stored object keeps the clip's own extension because
+/// `storage.rules` reads it to pick the ceiling.
+Future<ChatAttachmentDraft> chatVideoDraft({
+  required String pickedPath,
+  required String pickedName,
+  required String clientId,
+}) async {
+  final extension = chatMediaExtension(pickedName);
+  return ChatAttachmentDraft(
+    type: ChatMessageType.video,
+    localPath: pickedPath,
+    fileName: '$clientId.${extension.isEmpty ? 'mp4' : extension}',
+    byteSize: await File(pickedPath).length(),
+  );
+}
+
+/// A picked document, staged in [directory] under the message's own client id.
+///
+/// The copy is not ceremony: a system picker can hand back a uri only this app
+/// can read, and the offline queue has to find the same bytes after a restart.
+/// [fileName] stays what the sender named it, because that is the label the
+/// receiver reads — [chatSafeReceivedName] makes it safe on their side.
+Future<ChatAttachmentDraft> chatDocumentDraft({
+  required String fileName,
+  required String? pickedPath,
+  required Uint8List? pickedBytes,
+  required String directory,
+  required String clientId,
+}) async {
+  final extension = chatMediaExtension(fileName);
+  final target =
+      '$directory/$clientId${extension.isEmpty ? '' : '.$extension'}';
+  final source = pickedPath;
+  if (source != null) {
+    await File(source).copy(target);
+  } else if (pickedBytes case final bytes?) {
+    await File(target).writeAsBytes(bytes);
+  } else {
+    throw const ChatAttachmentRejectedException('empty');
+  }
+  return ChatAttachmentDraft(
+    type: ChatMessageType.file,
+    localPath: target,
+    fileName: fileName,
+    byteSize: await File(target).length(),
+  );
 }
 
 /// The longest voice note the app records. `firestore.rules` refuses a
