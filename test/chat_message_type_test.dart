@@ -97,7 +97,10 @@ void main() {
       final hidden = ChatMessage.fromData(
         id: 'm1',
         conversationId: 'c1',
-        data: const {'deletedFor': ['me'], 'senderId': 'you'},
+        data: const {
+          'deletedFor': ['me'],
+          'senderId': 'you',
+        },
       );
       expect(hidden.hiddenFor('me'), isTrue);
       expect(hidden.hiddenFor('you'), isFalse);
@@ -115,9 +118,26 @@ void main() {
       final message = ChatMessage.fromData(
         id: 'm1',
         conversationId: 'c1',
-        data: const {'replyTo': {'senderId': 'you'}},
+        data: const {
+          'replyTo': {'senderId': 'you'},
+        },
       );
       expect(message.replyTo, isNull);
+    });
+
+    test('reads the label of a copy and finds none in an older document', () {
+      final copy = ChatMessage.fromData(
+        id: 'm1',
+        conversationId: 'c1',
+        data: const {'senderId': 'me', 'content': 'ahlan', 'forwarded': true},
+      );
+      expect(copy.forwarded, isTrue);
+      final original = ChatMessage.fromData(
+        id: 'm2',
+        conversationId: 'c1',
+        data: const {'senderId': 'me', 'content': 'ahlan'},
+      );
+      expect(original.forwarded, isFalse);
     });
   });
 
@@ -171,6 +191,7 @@ void main() {
       int? durationMs,
       String? stickerId,
       ChatReply? replyTo,
+      bool forwarded = false,
     }) => ChatRepository.messageFields(
       senderId: 'me',
       recipientId: 'you',
@@ -183,6 +204,7 @@ void main() {
       durationMs: durationMs,
       stickerId: stickerId,
       replyTo: replyTo,
+      forwarded: forwarded,
     );
 
     test('always writes the seven keys the deployed rules require', () {
@@ -290,8 +312,38 @@ void main() {
         'replyTo',
         'deletedFor',
         'deletedForEveryone',
+        'forwarded',
       };
       expect(fields().keys.toSet().difference(allowed), isEmpty);
+      expect(fields(forwarded: true).keys.toSet().difference(allowed), isEmpty);
+    });
+
+    test('a message written by hand carries no forwarded key', () {
+      expect(fields().containsKey('forwarded'), isFalse);
+    });
+
+    test('the copy is the only thing that writes the label', () {
+      expect(fields(forwarded: true)['forwarded'], isTrue);
+    });
+  });
+
+  group('ChatMessage.fromPending', () {
+    Map<String, dynamic> entry({bool forwarded = false}) => {
+      'client_id': 'm1',
+      'conversation_id': 'c1',
+      'sender_id': 'me',
+      'content': 'ahlan',
+      'created_at': '2026-10-15T09:30:00.000',
+      'state': 'sending',
+      if (forwarded) 'forwarded': true,
+    };
+
+    test('a parked copy keeps its label until the queue flushes', () {
+      expect(ChatMessage.fromPending(entry(forwarded: true)).forwarded, isTrue);
+    });
+
+    test('an ordinary parked message has no label', () {
+      expect(ChatMessage.fromPending(entry()).forwarded, isFalse);
     });
   });
 

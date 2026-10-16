@@ -25,6 +25,8 @@ import 'package:social_chat/core/widgets/states.dart';
 import 'package:social_chat/core/widgets/user_avatar.dart';
 import 'package:social_chat/features/chat/chat_attachment_sheet.dart';
 import 'package:social_chat/features/chat/chat_composer.dart';
+import 'package:social_chat/features/chat/chat_forward.dart';
+import 'package:social_chat/features/chat/chat_forward_sheet.dart';
 import 'package:social_chat/features/chat/chat_gif_search.dart';
 import 'package:social_chat/features/chat/chat_media.dart';
 import 'package:social_chat/features/chat/chat_message_bubble.dart';
@@ -59,6 +61,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _hasLoadedOlder = false;
   bool _sending = false;
   bool _offline = false;
+
+  /// A forward is written once per chosen chat, so the picker closes the
+  /// moment it is tapped and the taps in between are ignored rather than
+  /// starting a second round of copies.
+  bool _forwarding = false;
 
   /// The panel that takes the keyboard's place under the composer, and the tab
   /// it last showed. Only one of the two is ever on screen at a time.
@@ -1080,6 +1087,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final s = AppStrings.of(context);
     final isMine = message.senderId == FirebaseAuth.instance.currentUser?.uid;
     final canCopy = message.content.isNotEmpty;
+    // The payload says what a copy of this message could carry: nothing for a
+    // photo or a voice note, whose file belongs to this chat alone.
+    final forwardPayload = ChatForwardPayload.from(message);
     final action = await showModalBottomSheet<_MessageAction>(
       context: context,
       showDragHandle: true,
@@ -1099,6 +1109,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               title: s.replyAction,
               onTap: () => Navigator.of(sheetContext).pop(_MessageAction.reply),
             ),
+            if (forwardPayload != null)
+              AppListTile(
+                leading: const Icon(Icons.forward),
+                title: s.forwardAction,
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(_MessageAction.forward),
+              ),
             if (isMine && !message.deletedForEveryone)
               AppListTile(
                 leading: Icon(
@@ -1130,6 +1147,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ..showSnackBar(SnackBar(content: Text(s.textCopied)));
       case _MessageAction.reply:
         _replyToMessage(message);
+      case _MessageAction.forward:
+        await _forwardMessage(message);
       case _MessageAction.deleteForMe:
         await _runMessageAction(
           () => ref
@@ -1166,6 +1185,94 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ..showSnackBar(
           SnackBar(content: Text(AppStrings.of(context).actionFailed)),
         );
+    }
+  }
+
+  /// A copy into each chosen chat, one write per chat. Nothing here uploads a
+  /// byte — [ChatForwardPayload.from] has already said the message carries only
+  /// a sticker id or a public url — so one chat's failure never undoes another:
+  /// the line that says it failed only counts the copies that did not go, and
+  /// going offline mid-loop parks the rest in the queue like any other send.
+  Future<void> _forwardMessage(ChatMessage message) async {
+    if (_forwarding) return;
+    final payload = ChatForwardPayload.from(message);
+    if (payload == null) return;
+    final s = AppStrings.of(context);
+    final targets = await ChatForwardSheet.show(
+      context,
+      fromConversationId: widget.conversationId,
+    );
+    if (!mounted || targets == null || targets.isEmpty) return;
+    final repository = ref.read(chatRepositoryProvider);
+    setState(() => _forwarding = true);
+    var sent = 0;
+    var lost = 0;
+    for (final target in targets) {
+      if (await _forwardInto(repository, target, payload)) {
+        sent++;
+      } else {
+        lost++;
+      }
+    }
+    if (!mounted) return;
+    setState(() => _forwarding = false);
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    if (sent > 0) {
+      messenger.showSnackBar(SnackBar(content: Text(s.forwardDone(sent))));
+    }
+    if (lost > 0) {
+      messenger.showSnackBar(SnackBar(content: Text(s.forwardFailed)));
+    }
+  }
+
+  /// One chat's turn. A person picked by name gets a conversation opened for
+  /// them at this moment rather than when they were ticked, so backing out of
+  /// the picker leaves no empty thread behind. Returns false only when the copy
+  /// neither reached Firestore nor the queue.
+  Future<bool> _forwardInto(
+    ChatRepository repository,
+    ChatForwardTarget target,
+    ChatForwardPayload payload,
+  ) async {
+    String? conversationId;
+    try {
+      final userId = target.userId;
+      conversationId = userId == null
+          ? target.conversationId!
+          : await repository.getOrCreateConversation(userId);
+      final clientId = repository.createClientId();
+      final connected = await _hasNetworkConnection();
+      await (connected
+          ? repository.sendForward(
+              conversationId: conversationId,
+              payload: payload,
+              clientId: clientId,
+            )
+          : repository.queueForward(
+              conversationId: conversationId,
+              payload: payload,
+              clientId: clientId,
+            ));
+      return true;
+    } catch (error, stackTrace) {
+      debugPrint('Unable to forward a chat message: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      final id = conversationId;
+      if (id == null) return false;
+      // The write itself may be what noticed the network had gone, so the copy
+      // gets one turn in the queue before it is called a failure.
+      try {
+        await repository.queueForward(
+          conversationId: id,
+          payload: payload,
+          clientId: repository.createClientId(),
+        );
+        return true;
+      } catch (queueError, queueTrace) {
+        debugPrint('Unable to queue a forwarded message: $queueError');
+        debugPrintStack(stackTrace: queueTrace);
+        return false;
+      }
     }
   }
 
@@ -1420,6 +1527,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       final quotedId = message.replyTo?.messageId;
                       final canJumpToQuote =
                           quotedId != null && loadedIds.contains(quotedId);
+                      final forwardPayload = ChatForwardPayload.from(message);
+                      // Words are easy enough to long-press, and an arrow under
+                      // every sentence would turn a thread into a row of
+                      // buttons. Artwork gets the arrow because it has no text
+                      // to hold a menu hint.
+                      final showsForwardArrow =
+                          forwardPayload != null &&
+                          forwardPayload.type != ChatMessageType.text;
                       return Column(
                         key: _messageKey(message.id),
                         children: [
@@ -1437,6 +1552,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 ? () => _scrollToMessage(quotedId)
                                 : null,
                             onLongPress: () => _showMessageActions(message),
+                            onForward: showsForwardArrow
+                                ? () => _forwardMessage(message)
+                                : null,
                             onSwipeReply: message.deletedForEveryone
                                 ? null
                                 : () => _replyToMessage(message),
@@ -1636,7 +1754,7 @@ class _ReplyDraft extends StatelessWidget {
   );
 }
 
-enum _MessageAction { copy, reply, deleteForMe, deleteForEveryone }
+enum _MessageAction { copy, reply, forward, deleteForMe, deleteForEveryone }
 
 /// The composer while a voice note is being taken: the running clock, a cancel
 /// that throws the recording away, and a send that uploads it.

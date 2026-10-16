@@ -145,7 +145,8 @@ service cloud.firestore {
         'stickerId',
         'replyTo',
         'deletedFor',
-        'deletedForEveryone'
+        'deletedForEveryone',
+        'forwarded'
       ];
     }
 
@@ -200,6 +201,7 @@ service cloud.firestore {
       let replyTo = message.get('replyTo', null);
       let deletedFor = message.get('deletedFor', null);
       let deletedForEveryone = message.get('deletedForEveryone', null);
+      let forwarded = message.get('forwarded', null);
       return message.content is string
         && message.content.size() <= 4000
         && (message.mediaUrl is string || message.mediaUrl == null)
@@ -210,7 +212,13 @@ service cloud.firestore {
         // A brand new message is visible to both sides. Hiding is an update, so
         // a sender can never quietly deliver something the receiver cannot see.
         && deletedFor == null
-        && (deletedForEveryone == null || deletedForEveryone == false);
+        && (deletedForEveryone == null || deletedForEveryone == false)
+        // The forwarded label is a plain flag a copy arrives with. It buys
+        // nothing: chatMessageCarriesWhatItClaims above still refuses a message
+        // that points at another chat's file, so claiming to be a copy cannot
+        // smuggle in someone else's media path. Only a create can set it — the
+        // update branches never list it among the keys they accept.
+        && (forwarded == null || forwarded is bool);
     }
 
     // sent -> delivered -> read, and never back.

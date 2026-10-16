@@ -20,6 +20,7 @@ ChatMessage _message({
   ChatMessageType type = ChatMessageType.text,
   ChatReply? replyTo,
   bool deletedForEveryone = false,
+  bool forwarded = false,
   List<String> deletedFor = const [],
   DateTime? createdAt,
 }) => ChatMessage(
@@ -31,6 +32,7 @@ ChatMessage _message({
   type: type,
   replyTo: replyTo,
   deletedForEveryone: deletedForEveryone,
+  forwarded: forwarded,
   deletedFor: deletedFor,
   createdAt: createdAt ?? DateTime(2026, 10, 15, 9, 30),
 );
@@ -40,6 +42,7 @@ Widget _harness(
   bool isOutgoing = true,
   VoidCallback? onLongPress,
   VoidCallback? onSwipeReply,
+  VoidCallback? onForward,
   Locale locale = const Locale('en'),
 }) => MaterialApp(
   locale: locale,
@@ -58,6 +61,7 @@ Widget _harness(
       otherDisplayName: 'Salma',
       onLongPress: onLongPress,
       onSwipeReply: onSwipeReply,
+      onForward: onForward,
     ),
   ),
 );
@@ -345,6 +349,96 @@ void main() {
     testWidgets('latin content keeps the app direction', (tester) async {
       await _show(tester, _harness(_message(content: latinPhrase)));
       expect(directionOf(tester, latinPhrase), isNull);
+    });
+  });
+
+  group('a copy of a message', () {
+    testWidgets('says it came out of another chat', (tester) async {
+      await _show(tester, _harness(_message(forwarded: true)));
+      expect(find.text('Forwarded'), findsOneWidget);
+    });
+
+    testWidgets('a message said where it was first carries no label', (
+      tester,
+    ) async {
+      await _show(tester, _harness(_message()));
+      expect(find.text('Forwarded'), findsNothing);
+    });
+
+    testWidgets('a copy of a sticker is labelled like a copy of words', (
+      tester,
+    ) async {
+      await _show(
+        tester,
+        _harness(
+          _message(content: '', type: ChatMessageType.sticker, forwarded: true),
+        ),
+      );
+      expect(find.text('Forwarded'), findsOneWidget);
+    });
+
+    testWidgets('a tombstone does not talk about where it came from', (
+      tester,
+    ) async {
+      await _show(
+        tester,
+        _harness(
+          _message(
+            content: 'secret',
+            forwarded: true,
+            deletedForEveryone: true,
+          ),
+        ),
+      );
+      expect(find.text('Forwarded'), findsNothing);
+      expect(find.text('This message was deleted'), findsOneWidget);
+    });
+
+    testWidgets('the line is translated too', (tester) async {
+      await _show(
+        tester,
+        _harness(_message(forwarded: true), locale: const Locale('ar')),
+      );
+      expect(find.text('محوّلة'), findsOneWidget);
+    });
+
+    testWidgets('an arrow beside the bubble forwards it', (tester) async {
+      var forwarded = false;
+      await _show(
+        tester,
+        _harness(_message(), onForward: () => forwarded = true),
+      );
+      expect(find.byTooltip('Forward'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.forward));
+      await tester.pump();
+      expect(forwarded, isTrue);
+    });
+
+    testWidgets('a bubble nobody may forward has no arrow', (tester) async {
+      await _show(tester, _harness(_message()));
+      expect(find.byIcon(Icons.forward), findsNothing);
+    });
+
+    testWidgets('the arrow sits beside the bubble, not over the words', (
+      tester,
+    ) async {
+      await _show(tester, _harness(_message(), onForward: () {}));
+      final content = tester.getRect(find.text('ahlan'));
+      expect(
+        tester.getCenter(find.byIcon(Icons.forward)).dx,
+        greaterThan(content.right),
+      );
+    });
+
+    test('the screen hands the arrow only to a message that can travel', () {
+      final source = File('lib/features/chat/chat_message_bubble.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n');
+      expect(source, contains('if (onForward != null)'));
+      expect(
+        source,
+        contains('if (message.forwarded && !message.deletedForEveryone)'),
+      );
     });
   });
 }

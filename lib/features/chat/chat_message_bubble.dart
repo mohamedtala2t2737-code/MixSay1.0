@@ -39,6 +39,7 @@ class ChatMessageBubble extends StatelessWidget {
     this.onLongPress,
     this.onReplyTap,
     this.onSwipeReply,
+    this.onForward,
     this.isGroupStart = true,
   });
 
@@ -77,6 +78,12 @@ class ChatMessageBubble extends StatelessWidget {
   /// one person's messages sits close together and only the first of a group
   /// leaves room, which is what makes a thread readable without names on it.
   final bool isGroupStart;
+
+  /// The small arrow beside a bubble that can travel to another chat. The
+  /// screen only hands it over when [ChatForwardPayload.from] says the message
+  /// can be copied without uploading anything, so a photo or a voice note —
+  /// whose file belongs to the chat it was sent in — has no arrow to press.
+  final VoidCallback? onForward;
 
   /// Answering this message, reached by dragging the bubble sideways. The chat
   /// screen hands it a real reply slot, so the gesture is only armed where the
@@ -269,6 +276,32 @@ class ChatMessageBubble extends StatelessWidget {
       );
     }
 
+    // Everything that hangs off the bubble's own edge goes in this column, so
+    // the label sits over the bubble rather than over the row it shares with
+    // the forward arrow.
+    final thread = Column(
+      crossAxisAlignment: isOutgoing
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      children: [
+        // Beside the bubble rather than inside it: a sticker has no bubble to
+        // hold a line of text, and a copy is labelled the same way whether it
+        // carries words or artwork.
+        if (message.forwarded && !message.deletedForEveryone)
+          _ForwardedLabel(textColor: timeColor),
+        Padding(
+          padding: EdgeInsets.only(top: isGroupStart ? 10 : 2),
+          child: _SwipeToReply(
+            onReply: onSwipeReply,
+            child: GestureDetector(
+              onLongPress: message.deletedForEveryone ? null : onLongPress,
+              child: bubble,
+            ),
+          ),
+        ),
+      ],
+    );
+
     return Align(
       alignment: isOutgoing
           ? AlignmentDirectional.centerEnd
@@ -282,15 +315,16 @@ class ChatMessageBubble extends StatelessWidget {
               ? CrossAxisAlignment.end
               : CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: EdgeInsets.only(top: isGroupStart ? 10 : 2),
-              child: _SwipeToReply(
-                onReply: onSwipeReply,
-                child: GestureDetector(
-                  onLongPress: message.deletedForEveryone ? null : onLongPress,
-                  child: bubble,
-                ),
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(child: thread),
+                // Beside the bubble rather than in the long-press menu alone:
+                // a picture or a sticker has no words to hold a line, and the
+                // arrow says what it is without opening anything.
+                if (onForward != null)
+                  _ForwardArrow(onTap: onForward!, color: timeColor),
+              ],
             ),
             if (isOutgoing && message.status == 'failed')
               Row(
@@ -381,6 +415,63 @@ class _TimeChip extends StatelessWidget {
               child: _StatusTicks(status: status, color: Colors.white70),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// The line that says this bubble is a copy of something said elsewhere. It is
+/// a caption rather than a badge: the original message stays where it was, so
+/// the only thing worth telling the reader is that these words arrived twice.
+class _ForwardedLabel extends StatelessWidget {
+  const _ForwardedLabel({required this.textColor});
+
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: 6),
+      child: Text(
+        AppStrings.of(context).forwardedLabel,
+        style: TextStyle(
+          fontSize: 11,
+          fontStyle: FontStyle.italic,
+          color: textColor,
+        ),
+      ),
+    );
+  }
+}
+
+/// The arrow that sends this message to another chat. Kept outside the bubble
+/// so it never changes the bubble's colour or corner, and quiet enough that a
+/// thread of twenty messages does not read as twenty buttons.
+class _ForwardArrow extends StatelessWidget {
+  const _ForwardArrow({required this.onTap, required this.color});
+
+  final VoidCallback onTap;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = AppStrings.of(context);
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 2),
+      child: Tooltip(
+        message: strings.forwardAction,
+        child: Semantics(
+          button: true,
+          label: strings.forwardAction,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(Icons.forward, size: 18, color: color),
+            ),
+          ),
+        ),
       ),
     );
   }

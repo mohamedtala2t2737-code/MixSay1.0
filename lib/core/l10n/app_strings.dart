@@ -256,6 +256,26 @@ class AppStrings {
   String get takePhoto => isArabic ? 'كاميرا' : 'Camera';
   String get youLabel => isArabic ? 'أنت' : 'You';
 
+  // ---------- forwarding a message to another chat ----------
+  String get forwardAction => isArabic ? 'تحويل' : 'Forward';
+
+  /// The little line above a copy, so nobody thinks the person wrote it here.
+  String get forwardedLabel => isArabic ? 'محوّلة' : 'Forwarded';
+  String get forwardSheetTitle =>
+      isArabic ? 'حوّل الرسالة لـ' : 'Forward this message to';
+  String get forwardSearchHint => isArabic
+      ? 'دوّر في محادثاتك أو على اسم مستخدم'
+      : 'Search your chats or a username';
+  String get forwardPeopleSection => isArabic ? 'ناس' : 'People';
+  String forwardSendTo(int count) =>
+      isArabic ? 'إرسال لـ ${number(count)}' : 'Send to $count';
+  String forwardDone(int count) => isArabic
+      ? 'اتحوّلت لـ ${number(count)} محادثة'
+      : 'Forwarded to $count chats';
+  String get forwardFailed => isArabic
+      ? 'التحويل فشل. جرّب تاني.'
+      : 'The forward did not go through. Try again.';
+
   // ---------- chats list: preview of a message without text ----------
   String get chatPreviewPhoto => isArabic ? 'صورة' : 'Photo';
   String get chatPreviewVideo => isArabic ? 'فيديو' : 'Video';

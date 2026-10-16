@@ -540,6 +540,72 @@ await check('a voice message longer than ten minutes is refused', async () => {
 });
 
 await seed();
+console.log('\nmessages: forwarded copies');
+// A forward is a copy of the payload with no file of its own, so the only thing
+// it adds to a document is the label. These checks hold that line: the label is
+// accepted where a copy is honest, and buys nothing where it is not.
+await check('a forwarded text copy is accepted', async () => {
+  await assertSucceeds(
+    setDoc(messageRef(ALICE, 'f-text'), {
+      ...validMessage,
+      clientId: 'f-text',
+      forwarded: true,
+    }),
+  );
+});
+await check('a forwarded sticker still travels by reference', async () => {
+  await assertSucceeds(
+    setDoc(
+      messageRef(ALICE, 'f-sticker'),
+      {
+        ...withType('f-sticker', 'sticker', { stickerId: 'starter:cat' }),
+        forwarded: true,
+      },
+    ),
+  );
+});
+await check('a forwarded gif keeps its external url', async () => {
+  await assertSucceeds(
+    setDoc(
+      messageRef(ALICE, 'f-gif'),
+      {
+        ...withType('f-gif', 'gif', {
+          mediaUrl: 'https://tenor.example/cat.gif',
+        }),
+        forwarded: true,
+      },
+    ),
+  );
+});
+await check('claiming to be a copy does not open another chat folder', async () => {
+  await assertFails(
+    setDoc(
+      messageRef(ALICE, 'f-steal'),
+      {
+        ...withType('f-steal', 'image', {
+          mediaUrl: `chats/${newId}/${ALICE}/f-steal.jpg`,
+        }),
+        forwarded: true,
+      },
+    ),
+  );
+});
+await check('a forwarded label that is not a boolean is refused', async () => {
+  await assertFails(
+    setDoc(messageRef(ALICE, 'f-word'), {
+      ...validMessage,
+      clientId: 'f-word',
+      forwarded: 'yes',
+    }),
+  );
+});
+await check('the forwarded label cannot be stuck on afterwards', async () => {
+  await assertFails(
+    updateDoc(messageRef(ALICE, 'msg1'), { forwarded: true }),
+  );
+});
+
+await seed();
 console.log('\nmessages: replies and hiding');
 await check('a reply quoting a message is accepted', async () => {
   await assertSucceeds(

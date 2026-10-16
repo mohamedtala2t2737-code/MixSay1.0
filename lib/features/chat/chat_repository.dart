@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:social_chat/core/config/chat_features.dart';
+import 'package:social_chat/features/chat/chat_forward.dart';
 import 'package:social_chat/features/chat/chat_media.dart';
 import 'package:social_chat/features/chat/chat_message_type.dart';
 import 'package:social_chat/features/chat/pending_queue_service.dart';
@@ -196,6 +197,7 @@ class ChatMessage {
     this.replyTo,
     this.deletedFor = const [],
     this.deletedForEveryone = false,
+    this.forwarded = false,
   });
 
   final String id;
@@ -226,6 +228,11 @@ class ChatMessage {
 
   /// The sender chose "delete for everyone", so both sides show a tombstone.
   final bool deletedForEveryone;
+
+  /// This message is a copy somebody moved here from another chat. It carries
+  /// no file of its own, so the original thread's storage is never written to
+  /// twice, and the label tells the receiver they did not get it first-hand.
+  final bool forwarded;
 
   /// Whether [userId] should see this message at all.
   bool hiddenFor(String userId) =>
@@ -269,6 +276,7 @@ class ChatMessage {
       replyTo: ChatReply.fromData(data['replyTo'] as Map<String, dynamic>?),
       deletedFor: (data['deletedFor'] as List<dynamic>? ?? []).cast<String>(),
       deletedForEveryone: data['deletedForEveryone'] == true,
+      forwarded: data['forwarded'] == true,
     );
   }
 
@@ -306,6 +314,7 @@ class ChatMessage {
           : attachment.byteSize,
       durationMs: attachment?.durationMs,
       replyTo: ChatReply.fromData(entry['reply_to'] as Map<String, dynamic>?),
+      forwarded: entry['forwarded'] == true,
     );
   }
 
@@ -749,6 +758,7 @@ class ChatRepository {
     required String text,
     required String clientId,
     ChatReply? replyTo,
+    bool forwarded = false,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) throw StateError('Message cannot be empty');
@@ -764,6 +774,7 @@ class ChatRepository {
       clientId: clientId,
       content: trimmed,
       replyTo: replyTo,
+      forwarded: forwarded,
     );
   }
 
@@ -774,6 +785,7 @@ class ChatRepository {
     required String stickerId,
     required String clientId,
     ChatReply? replyTo,
+    bool forwarded = false,
   }) {
     if (!ChatFeatures.anyStickerSource) {
       throw StateError('Stickers are disabled');
@@ -784,6 +796,7 @@ class ChatRepository {
       type: ChatMessageType.sticker,
       stickerId: stickerId,
       replyTo: replyTo,
+      forwarded: forwarded,
     );
   }
 
@@ -801,6 +814,7 @@ class ChatRepository {
     ChatReply? replyTo,
     ChatUploadController? controller,
     void Function(double fraction)? onProgress,
+    bool forwarded = false,
   }) async {
     final sized = await draft.withMeasuredSize();
     final rejection = chatMediaRejection(sized);
@@ -813,6 +827,7 @@ class ChatRepository {
         type: sized.type,
         mediaPath: sized.localPath,
         replyTo: replyTo,
+        forwarded: forwarded,
       );
     }
     final senderId = _me;
@@ -864,6 +879,7 @@ class ChatRepository {
         fileSize: sized.byteSize,
         durationMs: _durationWithinRules(sized.durationMs),
         replyTo: replyTo,
+        forwarded: forwarded,
       );
     } catch (error, stackTrace) {
       await _discardUpload(reference, sized.type);
@@ -1009,6 +1025,79 @@ class ChatRepository {
     }
   }
 
+  /// The copy of a message another chat gets, written now.
+  ///
+  /// It carries the same payload and no file of its own, so a forward costs one
+  /// document write like any other message: a sticker travels by its pack id and
+  /// a GIF by the public url it already had. [ChatForwardPayload.from] is what
+  /// decides whether a message can travel at all, and it refuses anything that
+  /// would need a second upload.
+  Future<ChatMessage> sendForward({
+    required String conversationId,
+    required ChatForwardPayload payload,
+    required String clientId,
+  }) {
+    final stickerId = payload.stickerId;
+    final mediaUrl = payload.mediaUrl;
+    return switch (payload.type) {
+      ChatMessageType.text => sendMessage(
+        conversationId: conversationId,
+        text: payload.text,
+        clientId: clientId,
+        forwarded: true,
+      ),
+      ChatMessageType.sticker when stickerId != null => sendSticker(
+        conversationId: conversationId,
+        stickerId: stickerId,
+        clientId: clientId,
+        forwarded: true,
+      ),
+      ChatMessageType.gif when mediaUrl != null => sendMedia(
+        conversationId: conversationId,
+        draft: _forwardedGifDraft(payload, mediaUrl, clientId),
+        clientId: clientId,
+        forwarded: true,
+      ),
+      _ => throw ArgumentError.value(
+        payload.type,
+        'payload',
+        'a forward carries no file to upload',
+      ),
+    };
+  }
+
+  /// The same copy parked in the offline queue, sent by [flushPendingMessages]
+  /// with its forwarded label intact.
+  Future<ChatMessage> queueForward({
+    required String conversationId,
+    required ChatForwardPayload payload,
+    required String clientId,
+  }) {
+    final mediaUrl = payload.mediaUrl;
+    return queueMessage(
+      conversationId: conversationId,
+      text: payload.text,
+      clientId: clientId,
+      stickerId: payload.stickerId,
+      attachment: payload.type == ChatMessageType.gif && mediaUrl != null
+          ? _forwardedGifDraft(payload, mediaUrl, clientId)
+          : null,
+      forwarded: true,
+    );
+  }
+
+  static ChatAttachmentDraft _forwardedGifDraft(
+    ChatForwardPayload payload,
+    String url,
+    String clientId,
+  ) => ChatAttachmentDraft(
+    type: ChatMessageType.gif,
+    localPath: url,
+    fileName: '$clientId.gif',
+    byteSize: 0,
+    caption: payload.text.isEmpty ? null : payload.text,
+  );
+
   Future<ChatMessage> queueMessage({
     required String conversationId,
     required String text,
@@ -1016,6 +1105,7 @@ class ChatRepository {
     ChatAttachmentDraft? attachment,
     String? stickerId,
     ChatReply? replyTo,
+    bool forwarded = false,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty && attachment == null && stickerId == null) {
@@ -1041,6 +1131,7 @@ class ChatRepository {
       // The quote travels with the queued send, so a reply typed offline still
       // arrives as a reply once the network comes back.
       if (replyTo != null) 'reply_to': replyTo.toMap(),
+      if (forwarded) 'forwarded': true,
     };
     await _pendingQueue.enqueue(entry);
     return ChatMessage.fromPending(entry);
@@ -1120,12 +1211,14 @@ class ChatRepository {
           final stickerId = entry['sticker_id'] is String
               ? entry['sticker_id'] as String
               : null;
+          final forwarded = entry['forwarded'] == true;
           final message = stickerId != null
               ? await sendSticker(
                   conversationId: conversationId,
                   stickerId: stickerId,
                   clientId: clientId,
                   replyTo: replyTo,
+                  forwarded: forwarded,
                 )
               : draft == null
               ? await _insertMessage(
@@ -1133,12 +1226,14 @@ class ChatRepository {
                   clientId: clientId,
                   content: entry['content'] as String? ?? '',
                   replyTo: replyTo,
+                  forwarded: forwarded,
                 )
               : await sendMedia(
                   conversationId: conversationId,
                   draft: draft,
                   clientId: clientId,
                   replyTo: replyTo,
+                  forwarded: forwarded,
                 );
           sent.add(message);
           transaction.entries.removeAt(index);
@@ -1365,6 +1460,7 @@ class ChatRepository {
     int? durationMs,
     String? stickerId,
     ChatReply? replyTo,
+    bool forwarded = false,
   }) {
     final fields = <String, dynamic>{
       'senderId': senderId,
@@ -1382,6 +1478,9 @@ class ChatRepository {
     if (durationMs != null) fields['durationMs'] = durationMs;
     if (stickerId != null) fields['stickerId'] = stickerId;
     if (replyTo != null) fields['replyTo'] = replyTo.toMap();
+    // Left out entirely for a message written by hand, so only a copy carries
+    // the extra key and no ordinary send changes shape.
+    if (forwarded) fields['forwarded'] = true;
     return fields;
   }
 
@@ -1415,6 +1514,7 @@ class ChatRepository {
     int? durationMs,
     String? stickerId,
     ChatReply? replyTo,
+    bool forwarded = false,
   }) async {
     final senderId = _me;
     final trimmedContent = content.trim();
@@ -1466,6 +1566,7 @@ class ChatRepository {
           durationMs: durationMs,
           stickerId: stickerId,
           replyTo: replyTo,
+          forwarded: forwarded,
         ),
       );
       transaction.update(
