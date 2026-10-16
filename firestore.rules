@@ -64,10 +64,10 @@ service cloud.firestore {
     // An empty result never matches a stored group, so it denies.
     function computedAgeGroup(userId) {
       let userPath = /databases/$(database)/documents/users/$(userId);
-      let birth = existsAfter(userPath)
-        ? getAfter(userPath).data.birthDate
-        : null;
-      return birth is timestamp ? ageGroupOf(birth) : '';
+      return existsAfter(userPath)
+        && getAfter(userPath).data.birthDate is timestamp
+        ? ageGroupOf(getAfter(userPath).data.birthDate)
+        : '';
     }
 
     // The signed-in user's own group, read from their own public profile. A
